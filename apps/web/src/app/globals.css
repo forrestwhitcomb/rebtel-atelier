@@ -1,0 +1,29 @@
+@import "@rebtel-atelier/rebtel-ds/tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--rebtel-font-body);
+  color: var(--rebtel-content-primary);
+  background: var(--rebtel-surface-page-canvas);
+}
+
+button {
+  font-family: inherit;
+}
+
+:root {
+  /* App-chrome colors (non-canvas UI) — intentionally separate from DS tokens
+     so the editor chrome never looks like a Rebtel mobile screen. */
+  --atelier-bg: #0f1115;
+  --atelier-panel-bg: #16191f;
+  --atelier-panel-border: #242833;
+  --atelier-panel-text: #e8e9ed;
+  --atelier-panel-muted: #9ba0ac;
+}

@@ -1,0 +1,407 @@
+/* Rebtel Design System — Figma 3.0 CSS custom properties.
+   Ported from the Aphantasia Rebtel fork's REBTEL_EXTRA_CSS block.
+   @font-face declarations intentionally omitted — session 1 uses system
+   fallbacks (SF Pro Display / SF Pro Text). Before the team uses Atelier,
+   drop the .otf/.ttf font files in apps/web/public/fonts/rebtel/ and add
+   the @font-face blocks back. */
+
+:root {
+  /* ── Font Families ── */
+  --rebtel-font-display: "Pano", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  --rebtel-font-body: "KH Teka", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ── Display Type Scale (Pano) ── */
+  --rebtel-display-lg-size: 32px;
+  --rebtel-display-lg-lh: 40px;
+  --rebtel-display-md-size: 24px;
+  --rebtel-display-md-lh: 32px;
+  --rebtel-display-sm-size: 20px;
+  --rebtel-display-sm-lh: 32px;
+  --rebtel-display-xs-size: 16px;
+  --rebtel-display-xs-lh: 24px;
+
+  /* ── Headline Type Scale (KH Teka) ── */
+  --rebtel-headline-lg-size: 32px;
+  --rebtel-headline-lg-lh: 40px;
+  --rebtel-headline-md-size: 24px;
+  --rebtel-headline-md-lh: 36px;
+  --rebtel-headline-sm-size: 20px;
+  --rebtel-headline-sm-lh: 32px;
+  --rebtel-headline-xs-size: 16px;
+  --rebtel-headline-xs-lh: 24px;
+
+  /* ── Paragraph Type Scale (KH Teka) ── */
+  --rebtel-paragraph-xl-size: 20px;
+  --rebtel-paragraph-xl-lh: 32px;
+  --rebtel-paragraph-lg-size: 18px;
+  --rebtel-paragraph-lg-lh: 28px;
+  --rebtel-paragraph-md-size: 16px;
+  --rebtel-paragraph-md-lh: 24px;
+  --rebtel-paragraph-sm-size: 14px;
+  --rebtel-paragraph-sm-lh: 20px;
+  --rebtel-paragraph-xs-size: 12px;
+  --rebtel-paragraph-xs-lh: 18px;
+
+  /* ── Label Type Scale (KH Teka) ── */
+  --rebtel-label-xl-size: 20px;
+  --rebtel-label-xl-lh: 20px;
+  --rebtel-label-lg-size: 18px;
+  --rebtel-label-lg-lh: 18px;
+  --rebtel-label-md-size: 16px;
+  --rebtel-label-md-lh: 16px;
+  --rebtel-label-sm-size: 14px;
+  --rebtel-label-sm-lh: 14px;
+  --rebtel-label-xs-size: 11px;
+  --rebtel-label-xs-lh: 11px;
+
+  /* ── Letter Spacing ── */
+  --rebtel-ls: 0.02em;
+
+  /* ── Spacing Scale ── */
+  --rebtel-spacing-none: 0px;
+  --rebtel-spacing-xxxs: 2px;
+  --rebtel-spacing-xxs: 4px;
+  --rebtel-spacing-xs: 8px;
+  --rebtel-spacing-sm: 12px;
+  --rebtel-spacing-md: 16px;
+  --rebtel-spacing-lg: 20px;
+  --rebtel-spacing-xl: 24px;
+  --rebtel-spacing-xxl: 32px;
+  --rebtel-spacing-xxxl: 52px;
+  --rebtel-spacing-xxxxl: 72px;
+
+  /* ── Object Height Scale ── */
+  --rebtel-height-xs: 24px;
+  --rebtel-height-sm: 32px;
+  --rebtel-height-md: 40px;
+  --rebtel-height-lg: 48px;
+  --rebtel-height-xl: 52px;
+  --rebtel-height-xxl: 64px;
+  --rebtel-height-xxxl: 72px;
+
+  /* ── Border Radius ── */
+  --rebtel-radius-xs: 4px;
+  --rebtel-radius-sm: 8px;
+  --rebtel-radius-md: 12px;
+  --rebtel-radius-lg: 16px;
+  --rebtel-radius-xl: 24px;
+  --rebtel-radius-xxl: 32px;
+  --rebtel-radius-full: 9999px;
+
+  /* ── Brand ── */
+  --rebtel-brand-red: #e31b3b;
+  --rebtel-brand-black: #111111;
+  --rebtel-brand-white: #ffffff;
+
+  /* ── Grey Scale ── */
+  --rebtel-grey-900: #111111;
+  --rebtel-grey-800: #2d2d32;
+  --rebtel-grey-700: #505055;
+  --rebtel-grey-600: #737378;
+  --rebtel-grey-500: #96969b;
+  --rebtel-grey-400: #b9b9be;
+  --rebtel-grey-300: #dcdce1;
+  --rebtel-grey-200: #f3f3f3;
+  --rebtel-grey-100: #fafafc;
+  --rebtel-grey-50: #fafafc;
+  --rebtel-grey-0: #ffffff;
+
+  /* ── Red Scale ── */
+  --rebtel-red-900: #5b0b18;
+  --rebtel-red-800: #5b0b18;
+  --rebtel-red-700: #881023;
+  --rebtel-red-600: #b6162f;
+  --rebtel-red-500: #e31b3b;
+  --rebtel-red-400: #e94962;
+  --rebtel-red-300: #ee7689;
+  --rebtel-red-200: #f4a4b1;
+  --rebtel-red-100: #fce8eb;
+  --rebtel-red-50: #fce8eb;
+
+  /* ── Semantic ── */
+  --rebtel-warning: #f06e1d;
+  --rebtel-warning-light: #fbdbc6;
+  --rebtel-warning-lighter: #fbdbc6;
+  --rebtel-success: #047804;
+  --rebtel-success-light: #d1f3c5;
+  --rebtel-green: #09bc09;
+  --rebtel-green-light: #d1f3c5;
+  --rebtel-green-lighter: #a4e68b;
+  --rebtel-purple: #4200ff;
+
+  /* ── Surface (mapped) ── */
+  --rebtel-surface-primary: #ffffff;
+  --rebtel-surface-primary-elevated: #ffffff;
+  --rebtel-surface-primary-inverse: #111111;
+  --rebtel-surface-primary-neutral: #f3f3f3;
+  --rebtel-surface-primary-light: #f3f3f3;
+  --rebtel-surface-primary-lighter: #fafafc;
+  --rebtel-surface-brand-red: #e31b3b;
+  --rebtel-surface-canvas: #fafafc;
+  --rebtel-surface-default: #f3f3f3;
+  --rebtel-surface-raised: #ffffff;
+  --rebtel-surface-overlay: #111111;
+  --rebtel-surface-sheet: #ffffff;
+  --rebtel-surface-calling: #edeadd;
+  --rebtel-surface-mtu: #dae2f4;
+
+  /* ── Text/Content (mapped) ── */
+  --rebtel-text-primary: #111111;
+  --rebtel-text-secondary: #737378;
+  --rebtel-text-tertiary: #b9b9be;
+  --rebtel-text-highlight: #e31b3b;
+  --rebtel-text-brand-inverted: #ffffff;
+  --rebtel-text-on-brand: #ffffff;
+  --rebtel-content-primary: #111111;
+  --rebtel-content-secondary: #737378;
+  --rebtel-content-tertiary: #b9b9be;
+  --rebtel-content-disabled: #b9b9be;
+  --rebtel-content-inverse: #ffffff;
+  --rebtel-content-brand: #e31b3b;
+  --rebtel-content-success: #09bc09;
+
+  /* ── Icon (mapped) ── */
+  --rebtel-icon-default: #111111;
+  --rebtel-icon-secondary: #737378;
+  --rebtel-icon-disabled: #b9b9be;
+  --rebtel-icon-brand: #e31b3b;
+
+  /* ── Border (mapped) ── */
+  --rebtel-border-default: #dcdce1;
+  --rebtel-border-secondary: #f3f3f3;
+  --rebtel-border-highlight: #e31b3b;
+
+  /* ── Button surfaces (component) ── */
+  --rebtel-button-primary: #e31b3b;
+  --rebtel-button-primary-bg: #e31b3b;
+  --rebtel-button-primary-text: #ffffff;
+  --rebtel-button-secondary-black-bg: #111111;
+  --rebtel-button-secondary-black-text: #ffffff;
+  --rebtel-button-secondary-white: #ffffff;
+  --rebtel-button-secondary-grey: #f3f3f3;
+  --rebtel-button-outlined-border: #dcdce1;
+  --rebtel-button-outlined-text: #111111;
+  --rebtel-button-disabled: #f3f3f3;
+  --rebtel-button-green: #09bc09;
+
+  /* ── Grey alpha variants ── */
+  --rebtel-grey-900-a40: #11111166;
+  --rebtel-grey-900-a60: #11111199;
+  --rebtel-grey-900-a80: #111111cc;
+  --rebtel-grey-100-a0: #fafafc00;
+  --rebtel-grey-800-a0: #2d2d3200;
+
+  /* ── Blue / Accent ── */
+  --rebtel-blue-100: #d6f8fa;
+  --rebtel-blue-200: #b8f3f7;
+  --rebtel-blue-300: #7de8ee;
+  --rebtel-blue-400: #55dce6;
+  --rebtel-blue-500: #2dd4e1;
+  --rebtel-blue-600: #24a9b4;
+  --rebtel-blue-700: #1a7e87;
+
+  /* ── Green scale ── */
+  --rebtel-green-100: #d1f3c5;
+  --rebtel-green-200: #a4e68b;
+  --rebtel-green-300: #49cd18;
+  --rebtel-green-400: #09bc09;
+  --rebtel-green-500: #047804;
+
+  /* ── Orange / Warning scale ── */
+  --rebtel-orange-100: #fbdbc6;
+  --rebtel-orange-200: #f7b68e;
+  --rebtel-orange-300: #f06e1d;
+
+  /* ── Additional primitives ── */
+  --rebtel-purple-500: #4200ff;
+  --rebtel-shadow-500: #32325d;
+  --rebtel-sand-100: #edeadd;
+  --rebtel-cornflower-100: #dae2f4;
+
+  /* ── Mapped: full surface ── */
+  --rebtel-surface-page-canvas: #fafafc;
+  --rebtel-surface-page-default: #f3f3f3;
+  --rebtel-surface-page-raised: #ffffff;
+  --rebtel-surface-page-overlay: #111111;
+  --rebtel-surface-brand-primary: #e31b3b;
+  --rebtel-surface-brand-pressed: #881023;
+  --rebtel-surface-brand-subtle: #fce8eb;
+  --rebtel-surface-accent-primary: #2dd4e1;
+  --rebtel-surface-accent-subtle: #d6f8fa;
+  --rebtel-surface-feedback-error: #e31b3b;
+  --rebtel-surface-feedback-error-subtle: #fce8eb;
+  --rebtel-surface-feedback-warning: #f06e1d;
+  --rebtel-surface-feedback-warning-subtle: #fbdbc6;
+  --rebtel-surface-feedback-success: #047804;
+  --rebtel-surface-feedback-success-subtle: #d1f3c5;
+  --rebtel-surface-overlay-scrim: #11111166;
+  --rebtel-surface-overlay-scrim-strong: #11111199;
+  --rebtel-surface-overlay-transparent: #fafafc00;
+  --rebtel-surface-feature-calling: #edeadd;
+  --rebtel-surface-feature-mtu: #dae2f4;
+
+  /* ── Mapped: extended content/border/icon ── */
+  --rebtel-content-accent: #2dd4e1;
+  --rebtel-content-warning: #f06e1d;
+  --rebtel-content-error: #e31b3b;
+  --rebtel-border-strong: #111111;
+  --rebtel-border-subtle: #f3f3f3;
+  --rebtel-border-focus: #e31b3b;
+  --rebtel-border-brand: #e31b3b;
+  --rebtel-border-accent: #2dd4e1;
+  --rebtel-border-error: #e31b3b;
+  --rebtel-border-success: #09bc09;
+  --rebtel-border-warning: #f06e1d;
+  --rebtel-icon-primary: #111111;
+  --rebtel-icon-tertiary: #b9b9be;
+  --rebtel-icon-inverse: #ffffff;
+  --rebtel-icon-accent: #2dd4e1;
+  --rebtel-icon-success: #09bc09;
+  --rebtel-icon-warning: #f06e1d;
+  --rebtel-icon-error: #e31b3b;
+  --rebtel-feedback-label-purple: #4200ff;
+  --rebtel-feedback-label-dark: #2d2d32;
+
+  /* ── Component: Button (all variants + states) ── */
+  --rebtel-button-primary-bg-pressed: #881023;
+  --rebtel-button-primary-bg-disabled: #f3f3f3;
+  --rebtel-button-primary-bg-focus: #e31b3b;
+  --rebtel-button-primary-border: #fafafc00;
+  --rebtel-button-primary-border-disabled: #f3f3f3;
+  --rebtel-button-primary-border-focus: #e31b3b;
+  --rebtel-button-primary-text-disabled: #b9b9be;
+  --rebtel-button-primary-icon: #ffffff;
+  --rebtel-button-primary-icon-disabled: #b9b9be;
+  --rebtel-button-secondary-black-bg-pressed: #111111;
+  --rebtel-button-secondary-black-bg-disabled: #f3f3f3;
+  --rebtel-button-secondary-black-bg-focus: #111111;
+  --rebtel-button-secondary-black-border: #fafafc00;
+  --rebtel-button-secondary-black-border-disabled: #f3f3f3;
+  --rebtel-button-secondary-black-border-focus: #e31b3b;
+  --rebtel-button-secondary-black-icon: #ffffff;
+  --rebtel-button-secondary-black-icon-disabled: #b9b9be;
+  --rebtel-button-secondary-white-bg: #ffffff;
+  --rebtel-button-secondary-white-bg-pressed: #f3f3f3;
+  --rebtel-button-secondary-white-bg-disabled: #f3f3f3;
+  --rebtel-button-secondary-white-bg-focus: #ffffff;
+  --rebtel-button-secondary-white-border: #fafafc00;
+  --rebtel-button-secondary-white-border-disabled: #f3f3f3;
+  --rebtel-button-secondary-white-border-focus: #e31b3b;
+  --rebtel-button-secondary-white-text: #111111;
+  --rebtel-button-secondary-white-text-disabled: #b9b9be;
+  --rebtel-button-secondary-white-icon: #111111;
+  --rebtel-button-secondary-white-icon-disabled: #b9b9be;
+  --rebtel-button-secondary-grey-bg: #f3f3f3;
+  --rebtel-button-secondary-grey-bg-pressed: #fafafc;
+  --rebtel-button-secondary-grey-bg-disabled: #f3f3f3;
+  --rebtel-button-secondary-grey-bg-focus: #f3f3f3;
+  --rebtel-button-secondary-grey-border: #dcdce1;
+  --rebtel-button-secondary-grey-border-disabled: #f3f3f3;
+  --rebtel-button-secondary-grey-border-focus: #e31b3b;
+  --rebtel-button-secondary-grey-text: #111111;
+  --rebtel-button-secondary-grey-text-disabled: #b9b9be;
+  --rebtel-button-secondary-grey-icon: #111111;
+  --rebtel-button-secondary-grey-icon-disabled: #b9b9be;
+  --rebtel-button-ghost-bg: #fafafc00;
+  --rebtel-button-ghost-bg-pressed: #f3f3f3;
+  --rebtel-button-ghost-bg-disabled: #fafafc00;
+  --rebtel-button-ghost-bg-focus: #fafafc00;
+  --rebtel-button-ghost-border: #fafafc00;
+  --rebtel-button-ghost-border-disabled: #fafafc00;
+  --rebtel-button-ghost-border-focus: #e31b3b;
+  --rebtel-button-ghost-text: #e31b3b;
+  --rebtel-button-ghost-text-disabled: #b9b9be;
+  --rebtel-button-ghost-icon: #e31b3b;
+  --rebtel-button-ghost-icon-disabled: #b9b9be;
+
+  /* ── Component: Input ── */
+  --rebtel-input-bg: #ffffff;
+  --rebtel-input-bg-focus: #ffffff;
+  --rebtel-input-bg-disabled: #f3f3f3;
+  --rebtel-input-bg-error: #ffffff;
+  --rebtel-input-border: #dcdce1;
+  --rebtel-input-border-focus: #e31b3b;
+  --rebtel-input-border-disabled: #f3f3f3;
+  --rebtel-input-border-error: #e31b3b;
+  --rebtel-input-text: #111111;
+  --rebtel-input-text-placeholder: #b9b9be;
+  --rebtel-input-text-disabled: #b9b9be;
+  --rebtel-input-label: #737378;
+  --rebtel-input-label-focus: #e31b3b;
+  --rebtel-input-label-error: #e31b3b;
+  --rebtel-input-icon: #737378;
+  --rebtel-input-icon-focus: #e31b3b;
+  --rebtel-input-icon-disabled: #b9b9be;
+  --rebtel-input-icon-error: #e31b3b;
+
+  /* ── Component: Card ── */
+  --rebtel-card-bg: #ffffff;
+  --rebtel-card-bg-pressed: #f3f3f3;
+  --rebtel-card-border: #dcdce1;
+  --rebtel-card-border-pressed: #111111;
+  --rebtel-card-elevated-bg: #ffffff;
+  --rebtel-card-elevated-border: #fafafc00;
+
+  /* ── Component: Label ── */
+  --rebtel-label-neutral-bg: #f3f3f3;
+  --rebtel-label-neutral-border: #dcdce1;
+  --rebtel-label-neutral-text: #737378;
+  --rebtel-label-brand-bg: #e31b3b;
+  --rebtel-label-brand-border: #e31b3b;
+  --rebtel-label-brand-text: #ffffff;
+  --rebtel-label-accent-bg: #2dd4e1;
+  --rebtel-label-accent-border: #2dd4e1;
+  --rebtel-label-accent-text: #2dd4e1;
+  --rebtel-label-success-bg: #d1f3c5;
+  --rebtel-label-success-border: #09bc09;
+  --rebtel-label-success-text: #09bc09;
+  --rebtel-label-warning-bg: #fbdbc6;
+  --rebtel-label-warning-border: #f06e1d;
+  --rebtel-label-warning-text: #f06e1d;
+  --rebtel-label-error-bg: #fce8eb;
+  --rebtel-label-error-border: #e31b3b;
+  --rebtel-label-error-text: #e31b3b;
+  --rebtel-label-purple-bg: #4200ff;
+  --rebtel-label-purple-border: #4200ff;
+  --rebtel-label-purple-text: #ffffff;
+
+  /* ── Component: Tab ── */
+  --rebtel-tab-bg: #fafafc00;
+  --rebtel-tab-bg-active: #fafafc00;
+  --rebtel-tab-border: #fafafc00;
+  --rebtel-tab-border-active: #e31b3b;
+  --rebtel-tab-text: #737378;
+  --rebtel-tab-text-active: #111111;
+  --rebtel-tab-text-disabled: #b9b9be;
+  --rebtel-tab-icon: #737378;
+  --rebtel-tab-icon-active: #e31b3b;
+  --rebtel-tab-icon-disabled: #b9b9be;
+  --rebtel-tab-indicator-active: #e31b3b;
+
+  /* ── Component: Navigation ── */
+  --rebtel-nav-bar-bg: #ffffff;
+  --rebtel-nav-bar-border: #f3f3f3;
+  --rebtel-nav-bar-icon: #737378;
+  --rebtel-nav-bar-icon-active: #e31b3b;
+  --rebtel-nav-bar-text: #737378;
+  --rebtel-nav-bar-text-active: #111111;
+
+  /* ── Component: Home card ── */
+  --rebtel-home-card-calling-bg: #edeadd;
+  --rebtel-home-card-mtu-bg: #dae2f4;
+
+  /* ── Scale: icon size ── */
+  --rebtel-icon-size-xxs: 12px;
+  --rebtel-icon-size-xs: 16px;
+  --rebtel-icon-size-sm: 20px;
+  --rebtel-icon-size-md: 24px;
+  --rebtel-icon-size-lg: 32px;
+  --rebtel-icon-size-xl: 40px;
+  --rebtel-icon-size-xxl: 48px;
+
+  /* ── Scale: stroke ── */
+  --rebtel-stroke-md: 1px;
+  --rebtel-stroke-lg: 2px;
+  --rebtel-stroke-xl: 3px;
+  --rebtel-stroke-xxl: 4px;
+}
