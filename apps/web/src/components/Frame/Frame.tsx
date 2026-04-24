@@ -1,15 +1,20 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { useCanvasStore, demoFrameId } from "@/stores/canvas";
+import { useCanvasStore } from "@/stores/canvas";
 import { InstanceView } from "../InstanceView/InstanceView";
 
 export function Frame() {
-  const frame = useCanvasStore((s) => s.canvas.frames.find((f) => f.id === demoFrameId));
-  const instances = useCanvasStore((s) =>
-    s.canvas.instances.filter((i) => i.frameId === demoFrameId),
-  );
-  const { setNodeRef, isOver } = useDroppable({ id: demoFrameId });
+  // Never derive arrays inside a zustand selector — a fresh reference each call
+  // trips useSyncExternalStore's cached-snapshot check (infinite loop on SSR).
+  // Select the stable array and filter in render instead.
+  const activeCanvasId = useCanvasStore((s) => s.activeCanvasId);
+  const canvas = useCanvasStore((s) => s.canvases[activeCanvasId]);
+  const frame = canvas?.frames[0];
+  const allInstances = canvas?.instances ?? [];
+  const frameId = frame?.id ?? "";
+  const instances = allInstances.filter((i) => i.frameId === frameId);
+  const { setNodeRef, isOver } = useDroppable({ id: frameId, disabled: !frameId });
 
   if (!frame) return null;
 

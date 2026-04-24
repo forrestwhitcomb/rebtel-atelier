@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { resolveTextStyle, tokenVar } from "../../tokens.js";
+import { resolveTextStyle } from "../../tokens.js";
 
 export interface CountryOption {
   code: string;
@@ -7,19 +7,34 @@ export interface CountryOption {
   flag?: string;
 }
 
-export type CountryPickerVariantId = "default";
+export type CountryPickerVariantId = string;
 
+// All visual choices are token props. See docs/COMPONENT_AUTHORING.md.
 export interface CountryPickerProps {
   countries: CountryOption[];
   selectedCode?: string | null;
   onSelect?: (code: string) => void;
-  variant?: CountryPickerVariantId;
+  /** CSS value (post-token-resolution). */
+  bg: string;
+  /** CSS value (post-token-resolution). */
+  fg: string;
+  /** CSS value (post-token-resolution). */
+  border: string;
+  /** CSS value (post-token-resolution). */
+  radius: string;
+  /** CSS value (post-token-resolution). */
+  labelColor: string;
 }
 
 export function CountryPicker({
   countries,
   selectedCode = null,
   onSelect,
+  bg,
+  fg,
+  border,
+  radius,
+  labelColor,
 }: CountryPickerProps) {
   const labelStyle = resolveTextStyle("label-md");
   const paragraphStyle = resolveTextStyle("paragraph-md");
@@ -27,7 +42,7 @@ export function CountryPicker({
   const containerStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    gap: tokenVar("spacing.xs"),
+    gap: "var(--rebtel-spacing-xs)",
     width: "100%",
   };
 
@@ -37,20 +52,20 @@ export function CountryPicker({
     lineHeight: labelStyle.lh,
     fontWeight: labelStyle.weight,
     letterSpacing: labelStyle.ls,
-    color: tokenVar("color.input-label"),
+    color: labelColor,
     margin: 0,
   };
 
   const selectStyle: CSSProperties = {
-    height: tokenVar("height.lg"),
-    paddingLeft: tokenVar("spacing.md"),
-    paddingRight: tokenVar("spacing.md"),
-    borderRadius: tokenVar("radius.sm"),
-    backgroundColor: tokenVar("color.input-bg"),
-    color: tokenVar("color.input-text"),
-    borderWidth: tokenVar("stroke.md"),
+    height: "var(--rebtel-height-lg)",
+    paddingLeft: "var(--rebtel-spacing-md)",
+    paddingRight: "var(--rebtel-spacing-md)",
+    borderRadius: radius,
+    backgroundColor: bg,
+    color: fg,
+    borderWidth: "var(--rebtel-stroke-md)",
     borderStyle: "solid",
-    borderColor: tokenVar("color.input-border"),
+    borderColor: border,
     fontFamily: paragraphStyle.family,
     fontSize: paragraphStyle.size,
     lineHeight: paragraphStyle.lh,

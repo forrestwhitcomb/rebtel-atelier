@@ -54,6 +54,9 @@ importers:
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@rebtel-atelier/publish':
+        specifier: workspace:*
+        version: link:../../packages/publish
       '@rebtel-atelier/rebtel-ds':
         specifier: workspace:*
         version: link:../../packages/rebtel-ds
@@ -97,6 +100,19 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+
+  packages/publish:
+    dependencies:
+      '@rebtel-atelier/spec':
+        specifier: workspace:*
+        version: link:../spec
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.19.17)
 
   packages/rebtel-ds:
     dependencies:

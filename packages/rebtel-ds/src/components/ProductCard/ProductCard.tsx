@@ -1,14 +1,25 @@
 import type { CSSProperties } from "react";
-import { resolveTextStyle, tokenVar } from "../../tokens.js";
+import { resolveTextStyle } from "../../tokens.js";
 
-export type ProductCardVariantId = "mtu-bundle" | "mtu-bundle-highlighted";
+// All visual choices are token props. Variants publish explicit token refs
+// (bg, border, radius, priceColor) — the component never switches on a
+// variant discriminator. See docs/COMPONENT_AUTHORING.md.
+
+export type ProductCardVariantId = string;
 
 export interface ProductCardProps {
   bundle: string;
   duration: string;
   price: number;
   currency: string;
-  variant?: ProductCardVariantId;
+  /** CSS value (post-token-resolution). */
+  bg: string;
+  /** CSS value (post-token-resolution). */
+  border: string;
+  /** CSS value (post-token-resolution). */
+  radius: string;
+  /** CSS value (post-token-resolution). */
+  priceColor: string;
 }
 
 function formatPrice(price: number, currency: string): string {
@@ -28,9 +39,11 @@ export function ProductCard({
   duration,
   price,
   currency,
-  variant = "mtu-bundle",
+  bg,
+  border,
+  radius,
+  priceColor,
 }: ProductCardProps) {
-  const highlighted = variant === "mtu-bundle-highlighted";
   const bundleStyle = resolveTextStyle("headline-sm");
   const durationStyle = resolveTextStyle("paragraph-sm");
   const priceStyle = resolveTextStyle("headline-md");
@@ -38,17 +51,15 @@ export function ProductCard({
   const containerStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    gap: tokenVar("spacing.sm"),
-    padding: tokenVar("spacing.md"),
-    borderRadius: tokenVar("radius.lg"),
-    backgroundColor: highlighted
-      ? tokenVar("color.home-card-mtu-bg")
-      : tokenVar("color.card-bg"),
-    borderWidth: tokenVar("stroke.md"),
+    gap: "var(--rebtel-spacing-sm)",
+    padding: "var(--rebtel-spacing-md)",
+    borderRadius: radius,
+    backgroundColor: bg,
+    borderWidth: "var(--rebtel-stroke-md)",
     borderStyle: "solid",
-    borderColor: highlighted ? tokenVar("color.border-brand") : tokenVar("color.card-border"),
+    borderColor: border,
     width: "100%",
-    minHeight: tokenVar("height.xxxl"),
+    minHeight: "var(--rebtel-height-xxxl)",
     boxSizing: "border-box",
   };
 
@@ -58,7 +69,7 @@ export function ProductCard({
     lineHeight: bundleStyle.lh,
     fontWeight: bundleStyle.weight,
     letterSpacing: bundleStyle.ls,
-    color: tokenVar("color.content-primary"),
+    color: "var(--rebtel-content-primary)",
     margin: 0,
   };
 
@@ -68,7 +79,7 @@ export function ProductCard({
     lineHeight: durationStyle.lh,
     fontWeight: durationStyle.weight,
     letterSpacing: durationStyle.ls,
-    color: tokenVar("color.content-secondary"),
+    color: "var(--rebtel-content-secondary)",
     margin: 0,
   };
 
@@ -78,9 +89,9 @@ export function ProductCard({
     lineHeight: priceStyle.lh,
     fontWeight: priceStyle.weight,
     letterSpacing: priceStyle.ls,
-    color: highlighted ? tokenVar("color.content-brand") : tokenVar("color.content-primary"),
+    color: priceColor,
     margin: 0,
-    marginTop: tokenVar("spacing.xs"),
+    marginTop: "var(--rebtel-spacing-xs)",
   };
 
   return (

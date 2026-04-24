@@ -1,27 +1,21 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useCanvasStore } from "@/stores/canvas";
 import { Frame } from "../Frame/Frame";
 
 const RAIL_WIDTH = 180;
-const PANEL_WIDTH = 240;
+const PANEL_WIDTH = 260;
+const HEADER_HEIGHT = 36;
 
 export function CanvasSurface() {
   const setZoom = useCanvasStore((s) => s.setZoom);
   const setPan = useCanvasStore((s) => s.setPan);
   const selection = useCanvasStore((s) => s.selection);
   const selectInstance = useCanvasStore((s) => s.selectInstance);
+  const editScope = useCanvasStore((s) => s.editScope);
   const hasSelection = selection !== null;
-  const transformRef = useRef<React.ComponentRef<typeof TransformWrapper> | null>(null);
-
-  // Mirror pan/zoom into the store so drop math can read current zoom.
-  useEffect(() => {
-    const tw = transformRef.current;
-    if (!tw) return;
-    // initial sync — no-op; the onTransformed callback keeps it in sync after.
-  }, []);
+  const inEditMode = editScope !== "instance";
 
   return (
     <div
@@ -30,7 +24,7 @@ export function CanvasSurface() {
       }}
       style={{
         position: "absolute",
-        top: 0,
+        top: HEADER_HEIGHT,
         bottom: 0,
         left: RAIL_WIDTH,
         right: hasSelection ? PANEL_WIDTH : 0,
@@ -39,13 +33,20 @@ export function CanvasSurface() {
       }}
     >
       <TransformWrapper
-        ref={transformRef}
         minScale={0.25}
         maxScale={3}
         initialScale={1}
         centerOnInit
+        limitToBounds={false}
         wheel={{ step: 0.08 }}
-        panning={{ velocityDisabled: true, excluded: ["rail-item", "dnd-draggable"] }}
+        // Hold Space to pan (Figma convention). Default left-click-drag fights
+        // dnd-kit's drag sensor, and empty-canvas drag pans accidentally while
+        // trying to select.
+        panning={{
+          velocityDisabled: true,
+          activationKeys: [" "],
+          wheelPanning: false,
+        }}
         doubleClick={{ disabled: true }}
         onTransformed={(_, state) => {
           setZoom(state.scale);
@@ -54,15 +55,15 @@ export function CanvasSurface() {
       >
         <TransformComponent
           wrapperStyle={{ width: "100%", height: "100%" }}
-          contentStyle={{ width: "100%", height: "100%" }}
+          contentStyle={{ display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <div
             style={{
-              width: 2400,
-              height: 1800,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              padding: 80,
+              // 8px nudge on the frame when the edit module appears —
+              // subtle acknowledgement that we've entered a different mode.
+              transform: inEditMode ? "translateY(8px)" : "translateY(0)",
+              transition: "transform 200ms ease",
             }}
           >
             <Frame />

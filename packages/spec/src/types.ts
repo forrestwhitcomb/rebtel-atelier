@@ -1,4 +1,4 @@
-import type { Token, TokenRef } from "./tokens.js";
+import type { Token, TokenCategory, TokenRef } from "./tokens.js";
 
 // ── ComponentSpec tree ───────────────────────────────────────
 // Recursive structural description of a component. Lifted from Aphantasia's
@@ -47,18 +47,84 @@ export interface Variant {
   /** Canonical canvas-facing state. Publishing promotes draft → published. */
   published: VariantProps;
   publishedVersion: number;
+  /**
+   * Immutable snapshots keyed by version. Instances pinned to an older version
+   * (e.g. on a shipped canvas) resolve against the snapshot, not the latest
+   * `published`. Optional for legacy fixture data — the store populates
+   * history[publishedVersion] = published on load.
+   */
+  publishedHistory?: Record<number, VariantProps>;
   lastPublishedBy?: string;
   lastPublishedAt?: string;
 }
 
+// ── Palette groups ──────────────────────────────────────────
+// Every component belongs to exactly one palette group (CLAUDE.md invariant
+// #6). Groups are editorial and adjustable as the DS grows; assignment is
+// manual — do NOT infer from name or shape.
+
+export type PaletteGroup =
+  | "inputs"
+  | "content"
+  | "containers"
+  | "dataDisplay"
+  | "navigation"
+  | "productSpecific";
+
 // ── Component (DS member) ────────────────────────────────────
+
+// ── Prop schema ─────────────────────────────────────────────
+// Declarative metadata about each editable prop. Drives the inspector's
+// grouping (Tokens vs Content), the token-category narrowing in the
+// picker, and the labels shown to editors. Required on every ingested
+// component per docs/COMPONENT_AUTHORING.md.
+
+export type PropCategory = "token" | "content";
+
+export type ContentKind = "text" | "multiline" | "number" | "boolean";
+
+export interface PropSchemaEntry {
+  category: PropCategory;
+  /** Required when category==="token". Narrows the token picker roster. */
+  tokenCategory?: TokenCategory;
+  /** Required when category==="content". Picks the input kind. */
+  contentKind?: ContentKind;
+  /** Display label; defaults to the prop key. */
+  label?: string;
+  /** Optional sub-grouping label within a category. */
+  group?: string;
+}
+
+export type PropSchema = Record<string, PropSchemaEntry>;
 
 export interface Component {
   id: ComponentTypeId;
   name: string;
+  /**
+   * Editorial palette group — required. CLAUDE.md invariant #6: every
+   * component must belong to exactly one group. Missing group is a
+   * validation error at DS load, not a silent fallback.
+   */
+  paletteGroup: PaletteGroup;
   baseSpec: ComponentSpec;
+  /** Editor-local draft overlay on baseSpec.props. Empty when not in base-edit mode. */
+  baseDraft?: Record<string, PropValue>;
   variants: Variant[];
   version: number;
+  /**
+   * Schema for every editable prop exposed by this component. The inspector
+   * reads this to group fields (Tokens / Content) and narrow the token
+   * picker. Props not listed fall back to value-type inference — but every
+   * ingested component SHOULD declare propSchema in full. See
+   * docs/COMPONENT_AUTHORING.md.
+   */
+  propSchema?: PropSchema;
+  /**
+   * When true, the canvas family-view strip is suppressed for instances of
+   * this component. Use for structural containers (__root, __row) where
+   * "pick a different variant" doesn't make sense.
+   */
+  hideFamilyView?: boolean;
 }
 
 // ── DS rules (placeholder) ───────────────────────────────────
@@ -128,11 +194,56 @@ export class VariantNotFoundError extends Error {
   }
 }
 
+export class DesignSystemValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DesignSystemValidationError";
+  }
+}
+
+// ── Validation ──────────────────────────────────────────────
+// Runtime check so dynamically-constructed DS data (e.g. loaded from
+// Supabase, or assembled outside the TS compiler's view) can't slip a
+// Component through without a paletteGroup. TS catches this at build for
+// statically-authored components; this is the belt.
+
+const PALETTE_GROUPS: readonly PaletteGroup[] = [
+  "inputs",
+  "content",
+  "containers",
+  "dataDisplay",
+  "navigation",
+  "productSpecific",
+];
+
+export function validateDesignSystem(ds: DesignSystem): void {
+  const problems: string[] = [];
+  for (const c of ds.components) {
+    if (!c.paletteGroup) {
+      problems.push(`Component "${c.id}" is missing paletteGroup`);
+      continue;
+    }
+    if (!PALETTE_GROUPS.includes(c.paletteGroup)) {
+      problems.push(
+        `Component "${c.id}" has unknown paletteGroup "${c.paletteGroup}" (allowed: ${PALETTE_GROUPS.join(", ")})`,
+      );
+    }
+  }
+  if (problems.length > 0) {
+    throw new DesignSystemValidationError(
+      `DesignSystem validation failed:\n  - ${problems.join("\n  - ")}`,
+    );
+  }
+}
+
 // ── EditorAction (reference only — session 1 implements a subset) ────
 // Kept here so sessions 2+ have the shape to grow into. The web app's
 // Zustand store only implements a subset — see apps/web/src/stores/canvas.ts.
 
-export type ToolMode = "select" | "hand";
+// CLAUDE.md type-system hygiene: ToolMode stays open-ended. Draw and
+// annotate aren't wired yet but are reintroduced in later sessions
+// (sketch recognition, annotation-based AI). Don't narrow.
+export type ToolMode = "select" | "draw" | "annotate" | "hand";
 
 export type EditorAction =
   | { type: "SELECT_INSTANCE"; id: string | null }

@@ -36,3 +36,10 @@ pnpm-debug.log*
 # Misc
 coverage/
 .vercel
+
+# Secrets
+*.pem
+*.key
+
+# Claude Code local project config
+.claude/

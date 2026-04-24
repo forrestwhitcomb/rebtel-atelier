@@ -1,12 +1,21 @@
 import type { Variant } from "@rebtel-atelier/spec";
 
+// Variants declare their styling as explicit token refs on `published`.
+// Editing these tokens in variant-edit mode mutates `draft`, and push
+// promotes draft → published.
+
 export const buttonVariants: Variant[] = [
   {
     id: "primary",
     name: "Primary",
     extends: "base",
     draft: {},
-    published: { variant: "primary" },
+    published: {
+      bg: { token: "color.button-primary-bg" },
+      fg: { token: "color.button-primary-text" },
+      border: { token: "color.button-primary-border" },
+      radius: { token: "radius.md" },
+    },
     publishedVersion: 1,
   },
   {
@@ -14,7 +23,12 @@ export const buttonVariants: Variant[] = [
     name: "Secondary",
     extends: "base",
     draft: {},
-    published: { variant: "secondary" },
+    published: {
+      bg: { token: "color.button-secondary-black-bg" },
+      fg: { token: "color.button-secondary-black-text" },
+      border: { token: "color.button-secondary-black-border" },
+      radius: { token: "radius.md" },
+    },
     publishedVersion: 1,
   },
   {
@@ -22,7 +36,12 @@ export const buttonVariants: Variant[] = [
     name: "Ghost",
     extends: "base",
     draft: {},
-    published: { variant: "ghost" },
+    published: {
+      bg: { token: "color.button-ghost-bg" },
+      fg: { token: "color.button-ghost-text" },
+      border: { token: "color.button-ghost-border" },
+      radius: { token: "radius.md" },
+    },
     publishedVersion: 1,
   },
 ];

@@ -2,23 +2,38 @@
 
 import { useEffect, useRef } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { useCanvasStore, demoFrameId } from "@/stores/canvas";
+import { useCanvasStore } from "@/stores/canvas";
 import { getSupabase } from "@/lib/supabase";
 import { LeftRail } from "../LeftRail/LeftRail";
 import { CanvasSurface } from "../CanvasSurface/CanvasSurface";
+import { CanvasHeader } from "../CanvasHeader/CanvasHeader";
 import { RightPanel } from "../RightPanel/RightPanel";
+import { EditModule } from "../EditModule/EditModule";
+import { PushPopup } from "../PushPopup/PushPopup";
+import { FamilyView } from "../FamilyView/FamilyView";
+import { Toast } from "../Toast/Toast";
 
-export function CanvasEditor() {
+interface CanvasEditorProps {
+  canvasId: string;
+}
+
+export function CanvasEditor({ canvasId }: CanvasEditorProps) {
+  const setActiveCanvas = useCanvasStore((s) => s.setActiveCanvas);
   const addInstance = useCanvasStore((s) => s.addInstance);
   const designSystem = useCanvasStore((s) => s.designSystem);
+  const activeCanvasId = useCanvasStore((s) => s.activeCanvasId);
   const zoomRef = useRef(1);
+
+  useEffect(() => {
+    setActiveCanvas(canvasId);
+  }, [canvasId, setActiveCanvas]);
+
   useEffect(() => {
     return useCanvasStore.subscribe((s) => {
       zoomRef.current = s.zoom;
     });
   }, []);
 
-  // Verify Supabase client instantiates — session 1 acceptance for /lib/supabase
   useEffect(() => {
     try {
       getSupabase();
@@ -33,7 +48,12 @@ export function CanvasEditor() {
 
   function onDragEnd(event: DragEndEvent) {
     const { active, over, delta, activatorEvent } = event;
-    if (!over || over.id !== demoFrameId) return;
+    if (!over) return;
+    const frameId = String(over.id);
+    // Confirm the drop target is the active canvas's frame.
+    const activeCanvas = useCanvasStore.getState().canvases[activeCanvasId];
+    const frame = activeCanvas?.frames.find((f) => f.id === frameId);
+    if (!frame) return;
 
     const componentId = String(active.id);
     const component = designSystem.components.find((c) => c.id === componentId);
@@ -41,8 +61,7 @@ export function CanvasEditor() {
 
     const firstVariantId = component.variants[0]?.id ?? "default";
 
-    // Compute drop position within frame space, correcting for zoom.
-    const frameEl = document.querySelector<HTMLElement>(`[data-frame-id="${demoFrameId}"]`);
+    const frameEl = document.querySelector<HTMLElement>(`[data-frame-id="${frameId}"]`);
     let position = { x: 16, y: 16 };
     if (frameEl && activatorEvent && "clientX" in activatorEvent) {
       const pe = activatorEvent as PointerEvent;
@@ -56,7 +75,7 @@ export function CanvasEditor() {
       };
     }
 
-    addInstance(demoFrameId, componentId, firstVariantId, position);
+    addInstance(activeCanvasId, frameId, componentId, firstVariantId, position);
   }
 
   return (
@@ -71,8 +90,13 @@ export function CanvasEditor() {
         }}
       >
         <CanvasSurface />
+        <CanvasHeader />
+        <EditModule />
         <LeftRail />
         <RightPanel />
+        <FamilyView />
+        <PushPopup />
+        <Toast />
       </div>
     </DndContext>
   );

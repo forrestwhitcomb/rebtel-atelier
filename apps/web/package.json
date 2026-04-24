@@ -11,6 +11,7 @@
     "test": "echo \"(no tests yet)\""
   },
   "dependencies": {
+    "@rebtel-atelier/publish": "workspace:*",
     "@rebtel-atelier/rebtel-ds": "workspace:*",
     "@rebtel-atelier/renderer": "workspace:*",
     "@rebtel-atelier/spec": "workspace:*",

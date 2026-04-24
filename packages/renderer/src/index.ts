@@ -3,6 +3,7 @@ import {
   resolveProps,
   type Component,
   type ComponentTypeId,
+  type DraftScope,
   type Instance,
   type PropValue,
 } from "@rebtel-atelier/spec";
@@ -13,11 +14,6 @@ import {
   resolveToken,
   tokenVar,
 } from "@rebtel-atelier/rebtel-ds";
-
-// ── Component registry ──────────────────────────────────────
-// Maps ComponentTypeId → React component. Apps inject their full DS via
-// `createRenderer({ registry })` so the renderer stays DS-agnostic; the
-// default export below is the Rebtel registry for convenience.
 
 type AnyComponent = (props: Record<string, unknown>) => ReactElement;
 
@@ -31,17 +27,23 @@ export const rebtelRegistry: RendererRegistry = {
   CountryPicker: CountryPicker as unknown as AnyComponent,
 };
 
-// ── Rendering ────────────────────────────────────────────────
-
 export interface RenderOptions {
   registry?: RendererRegistry;
+  /**
+   * When set, the resolver layers an additional draft overlay. Pass this only
+   * for the specific instance that matches the active editor's scope —
+   * non-editing views must always render against published state.
+   */
+  draftScope?: DraftScope;
+  /**
+   * Render-only override of `instance.variantId`. Used by the family-view
+   * hover preview — the instance's committed variantId is unchanged.
+   * When set, `instance.variantVersion` is ignored (we use the new variant's
+   * current published state, since pinning across variants isn't meaningful).
+   */
+  previewVariantId?: string;
 }
 
-/**
- * Render an Instance to a React element.
- * Resolves props via the three-layer stack (base ← variant.published ← overrides),
- * then invokes the registered component.
- */
 export function renderInstance(
   instance: Instance,
   component: Component,
@@ -54,7 +56,12 @@ export function renderInstance(
       `[renderer] No component registered for id "${component.id}". Did you add it to the registry?`,
     );
   }
-  const resolved = resolveProps(component, instance.variantId, instance.propOverrides);
+  const effectiveVariantId = options.previewVariantId ?? instance.variantId;
+  const resolved = resolveProps(component, effectiveVariantId, instance.propOverrides, {
+    draftScope: options.draftScope ?? null,
+    // Pinning only applies when we're rendering the instance's real variant.
+    variantVersion: options.previewVariantId ? undefined : instance.variantVersion,
+  });
   const reactProps = Object.fromEntries(
     Object.entries(resolved).map(([k, v]) => [k, coercePropValueForReact(v)]),
   );
@@ -74,5 +81,4 @@ function coercePropValueForReact(value: PropValue): unknown {
   return value;
 }
 
-// Re-export token utilities so consumers only need @rebtel-atelier/renderer
 export { resolveToken, tokenVar };

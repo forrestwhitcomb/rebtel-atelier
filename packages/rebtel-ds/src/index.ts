@@ -26,6 +26,7 @@ export { countryPickerVariants } from "./components/CountryPicker/CountryPicker.
 
 // Assembled design system for easy consumption by apps
 import type { DesignSystem } from "@rebtel-atelier/spec";
+import { validateDesignSystem } from "@rebtel-atelier/spec";
 import { buttonComponent } from "./components/Button/Button.spec.js";
 import { productCardComponent } from "./components/ProductCard/ProductCard.spec.js";
 import { countryPickerComponent } from "./components/CountryPicker/CountryPicker.spec.js";
@@ -36,3 +37,7 @@ export const rebtelDesignSystem: DesignSystem = {
   components: [buttonComponent, productCardComponent, countryPickerComponent],
   rules: [],
 };
+
+// Startup-time validation per CLAUDE.md invariant #6. Throws if any
+// component is missing a paletteGroup or uses an unknown group value.
+validateDesignSystem(rebtelDesignSystem);
