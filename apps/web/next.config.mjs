@@ -5,6 +5,7 @@ const nextConfig = {
     "@rebtel-atelier/spec",
     "@rebtel-atelier/rebtel-ds",
     "@rebtel-atelier/renderer",
+    "@rebtel-atelier/publish",
   ],
   webpack: (config) => {
     // Workspace packages import internal modules with `.js` extensions
