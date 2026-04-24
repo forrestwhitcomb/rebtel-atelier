@@ -612,14 +612,31 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           editor: "Forrest",
         }),
       });
-      const json = (await res.json()) as
+      // Read as text first so non-JSON responses (Vercel's generic error
+      // pages, a crashed function, a 502) surface a readable message
+      // instead of a misleading "Unexpected end of JSON input".
+      const rawText = await res.text();
+      let parsed:
         | { ok: true; pr: { number: number; url: string } }
-        | { ok: false; error: string };
-      if (!res.ok || !("ok" in json) || !json.ok) {
-        const msg = "error" in json ? json.error : `HTTP ${res.status}`;
+        | { ok: false; error: string }
+        | null = null;
+      if (rawText) {
+        try {
+          parsed = JSON.parse(rawText);
+        } catch {
+          // fall through — we'll surface the raw text below
+        }
+      }
+      if (!res.ok || !parsed || !("ok" in parsed) || !parsed.ok) {
+        const msg =
+          parsed && "error" in parsed
+            ? parsed.error
+            : rawText
+              ? `HTTP ${res.status}: ${rawText.slice(0, 400)}`
+              : `HTTP ${res.status} (empty response — check Vercel function logs)`;
         throw new Error(msg);
       }
-      prInfo = { url: json.pr.url, number: json.pr.number };
+      prInfo = { url: parsed.pr.url, number: parsed.pr.number };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ isPublishing: false, publishError: msg });

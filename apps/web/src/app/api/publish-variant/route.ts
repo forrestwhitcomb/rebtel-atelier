@@ -41,21 +41,51 @@ function shortHash(): string {
   return randomBytes(4).toString("hex");
 }
 
+const REQUIRED_ENV = [
+  "GITHUB_APP_ID",
+  "GITHUB_INSTALLATION_ID",
+  "GITHUB_REPO_OWNER",
+  "GITHUB_REPO_NAME",
+] as const;
+
+function validateEnv(): string[] {
+  const missing: string[] = [];
+  for (const name of REQUIRED_ENV) {
+    if (!process.env[name]) missing.push(name);
+  }
+  // Private key: accept either the inline PEM (Vercel) or a path to one (dev).
+  if (!process.env.GITHUB_PRIVATE_KEY && !process.env.GITHUB_PRIVATE_KEY_PATH) {
+    missing.push("GITHUB_PRIVATE_KEY (or GITHUB_PRIVATE_KEY_PATH)");
+  }
+  return missing;
+}
+
 export async function POST(req: Request) {
+  const missingEnv = validateEnv();
+  if (missingEnv.length > 0) {
+    const msg = `Missing env vars: ${missingEnv.join(", ")}`;
+    console.error("[publish-variant]", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+
   let body: PublishRequestBody;
   try {
     body = (await req.json()) as PublishRequestBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { component, variantBefore, variantAfter, impacts, editor, atelierUrl } = body;
   if (!component?.id || !variantAfter?.id) {
     return NextResponse.json(
-      { error: "Missing required fields: component.id or variantAfter.id" },
+      { ok: false, error: "Missing required fields: component.id or variantAfter.id" },
       { status: 400 },
     );
   }
+
+  console.log(
+    `[publish-variant] start component=${component.id} variant=${variantAfter.id}`,
+  );
 
   const repo = repoFromEnv();
   const path = variantsFilePathFor(component);
