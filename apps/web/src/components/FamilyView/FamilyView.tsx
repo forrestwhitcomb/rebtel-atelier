@@ -3,7 +3,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
-  countVariantUsageOnCanvas,
+  axisSelectionsEqual,
+  countAxisCombinationOnCanvas,
+  enumerateAxisCombinations,
   scoreSwapCandidates,
   selectActiveCanvas,
   useCanvasStore,
@@ -30,10 +32,10 @@ export function FamilyView() {
   const zoom = useCanvasStore((s) => s.zoom);
   const pan = useCanvasStore((s) => s.pan);
   const canvases = useCanvasStore((s) => s.canvases);
-  const hoveredVariantId = useCanvasStore((s) => s.hoveredVariantId);
-  const setHoveredVariantId = useCanvasStore((s) => s.setHoveredVariantId);
-  const swapInstanceVariant = useCanvasStore((s) => s.swapInstanceVariant);
-  const createVariantFromInstance = useCanvasStore((s) => s.createVariantFromInstance);
+  const hoveredAxisSelection = useCanvasStore((s) => s.hoveredAxisSelection);
+  const setHoveredAxisSelection = useCanvasStore((s) => s.setHoveredAxisSelection);
+  const setInstanceAxisSelection = useCanvasStore((s) => s.setInstanceAxisSelection);
+  const createAxisOptionFromInstance = useCanvasStore((s) => s.createAxisOptionFromInstance);
 
   const stripRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -46,10 +48,15 @@ export function FamilyView() {
     ? designSystem.components.find((c) => c.id === instance.componentId) ?? null
     : null;
 
+  // In v4, "more than one variant" means the cartesian product of axis
+  // options is > 1. Single-axis with 3 options → 3 combos; empty axes → 1
+  // combo. The family view stays hidden when there's only one combo to
+  // pick from (no swap is meaningful).
+  const combos = component ? enumerateAxisCombinations(component) : [];
   const visible =
     !!instance &&
     !!component &&
-    component.variants.length > 1 &&
+    combos.length > 1 &&
     editScope === "instance" &&
     !component.hideFamilyView;
 
@@ -156,7 +163,7 @@ export function FamilyView() {
     <div
       ref={stripRef}
       style={containerStyle}
-      onMouseLeave={() => setHoveredVariantId(null)}
+      onMouseLeave={() => setHoveredAxisSelection(null)}
       onClick={(e) => e.stopPropagation()}
       data-family-view="true"
     >
@@ -165,7 +172,7 @@ export function FamilyView() {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <div style={{ fontWeight: 600, fontSize: 13 }}>{component.name}</div>
         <div style={{ fontSize: 11, color: "var(--atelier-panel-muted)" }}>
-          {component.variants.length} variant{component.variants.length === 1 ? "" : "s"}
+          {combos.length} variant{combos.length === 1 ? "" : "s"}
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 11, color: "var(--atelier-panel-muted)" }}>
@@ -182,40 +189,45 @@ export function FamilyView() {
           scrollbarWidth: "thin",
         }}
       >
-        {component.variants.map((v) => {
+        {combos.map((combo) => {
           const usage = activeCanvas
-            ? countVariantUsageOnCanvas(activeCanvas, component.id, v.id)
+            ? countAxisCombinationOnCanvas(activeCanvas, component.id, combo.axisSelection)
             : 0;
-          const isCurrent = v.id === instance.variantId;
+          const isCurrent = axisSelectionsEqual(combo.axisSelection, instance.axisSelection);
           return (
             <VariantThumbnail
-              key={v.id}
+              key={combo.key}
               component={component}
-              variant={v}
+              axisSelection={combo.axisSelection}
+              variantName={combo.name}
               sourceInstance={instance}
+              designSystem={designSystem}
               isCurrent={isCurrent}
               usageCount={usage}
-              onHoverEnter={() => setHoveredVariantId(v.id)}
+              onHoverEnter={() => setHoveredAxisSelection(combo.axisSelection)}
               onHoverLeave={() => {
-                // Hover-leave handled by container's onMouseLeave too — but
-                // setting here gives immediate revert when moving between tiles.
-                if (hoveredVariantId === v.id) setHoveredVariantId(null);
+                if (
+                  hoveredAxisSelection &&
+                  axisSelectionsEqual(hoveredAxisSelection, combo.axisSelection)
+                ) {
+                  setHoveredAxisSelection(null);
+                }
               }}
               onClick={() => {
                 if (isCurrent) return;
-                setHoveredVariantId(null);
-                swapInstanceVariant(instance.id, v.id);
+                setHoveredAxisSelection(null);
+                setInstanceAxisSelection(instance.id, combo.axisSelection);
               }}
             />
           );
         })}
 
-        {/* + new variant */}
+        {/* + new variant — adds an option to the component's first axis */}
         <NewVariantTile
           onClick={() => {
-            const newId = createVariantFromInstance(instance.id);
-            if (!newId) {
-              console.warn("[FamilyView] createVariantFromInstance returned null");
+            const newOption = createAxisOptionFromInstance(instance.id);
+            if (!newOption) {
+              console.warn("[FamilyView] createAxisOptionFromInstance returned null");
             }
           }}
         />

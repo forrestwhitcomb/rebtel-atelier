@@ -1,17 +1,27 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { resolveTextStyle } from "../../tokens.js";
 
-// All visual choices are token props. Variants publish explicit token refs
-// (bg, border, radius, priceColor) — the component never switches on a
-// variant discriminator. See docs/COMPONENT_AUTHORING.md.
-
-export type ProductCardVariantId = string;
+// Token-driven product card. Compositional: accepts a `cta` slot the
+// renderer fills from the ComponentRef in baseSpec.children.
+//
+// Composition contract: the renderer pre-renders any ComponentRef child
+// in this component's baseSpec.children and passes it as a slot prop
+// keyed by ref.key. ProductCard declares one slot (`cta`); if present,
+// it renders below the price block. If absent (nothing referenced —
+// e.g. an instance whose component has been swapped without a slot
+// fill), the layout collapses gracefully.
 
 export interface ProductCardProps {
   bundle: string;
   duration: string;
   price: number;
   currency: string;
+  /**
+   * Display label for the CTA. Mirrors what the spec wires through to
+   * the slot's Button label — keeps the inspector showing one familiar
+   * string instead of asking editors to dig into a nested instance.
+   */
+  ctaLabel: string;
   /** CSS value (post-token-resolution). */
   bg: string;
   /** CSS value (post-token-resolution). */
@@ -20,6 +30,13 @@ export interface ProductCardProps {
   radius: string;
   /** CSS value (post-token-resolution). */
   priceColor: string;
+  /**
+   * Slot filled by the renderer from ProductCard's ComponentRef child
+   * (`baseSpec.children` — the entry keyed `cta`). Optional so a
+   * ProductCard rendered outside the renderer (e.g. in a unit test
+   * fixture) still works.
+   */
+  cta?: ReactNode;
 }
 
 function formatPrice(price: number, currency: string): string {
@@ -43,6 +60,7 @@ export function ProductCard({
   border,
   radius,
   priceColor,
+  cta,
 }: ProductCardProps) {
   const bundleStyle = resolveTextStyle("headline-sm");
   const durationStyle = resolveTextStyle("paragraph-sm");
@@ -99,6 +117,7 @@ export function ProductCard({
       <p style={bundleTextStyle}>{bundle}</p>
       <p style={durationTextStyle}>{duration}</p>
       <p style={priceTextStyle}>{formatPrice(price, currency)}</p>
+      {cta ? <div style={{ marginTop: "var(--rebtel-spacing-sm)" }}>{cta}</div> : null}
     </div>
   );
 }

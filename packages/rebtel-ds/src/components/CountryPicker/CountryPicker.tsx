@@ -7,8 +7,6 @@ export interface CountryOption {
   flag?: string;
 }
 
-export type CountryPickerVariantId = string;
-
 // All visual choices are token props. See docs/COMPONENT_AUTHORING.md.
 export interface CountryPickerProps {
   countries: CountryOption[];

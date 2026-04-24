@@ -4,6 +4,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 import type { Component, Instance } from "@rebtel-atelier/spec";
 import { buildJsxSnippet } from "./snippet";
 import { collectResolvedTokens } from "./tokens";
+import { synthesizeVariantName } from "@/stores/canvas";
 
 interface DevModePanelProps {
   component: Component;
@@ -31,7 +32,7 @@ export function DevModePanel({ component, instance }: DevModePanelProps) {
     [component, instance],
   );
 
-  const variant = component.variants.find((v) => v.id === instance.variantId);
+  const variantName = synthesizeVariantName(component, instance.axisSelection);
 
   const repoOwner = process.env.NEXT_PUBLIC_GITHUB_REPO_OWNER;
   const repoName = process.env.NEXT_PUBLIC_GITHUB_REPO_NAME;
@@ -94,7 +95,7 @@ export function DevModePanel({ component, instance }: DevModePanelProps) {
         </div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>{component.name}</div>
         <div style={{ fontSize: 12, color: "var(--atelier-panel-muted)", marginTop: 2 }}>
-          {variant ? variant.name : instance.variantId} ·{" "}
+          {variantName} ·{" "}
           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
             v{instance.variantVersion}
           </span>

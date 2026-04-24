@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { defaultAxisSelectionFor } from "@rebtel-atelier/spec";
 import { useCanvasStore } from "@/stores/canvas";
 import { getSupabase } from "@/lib/supabase";
 import { LeftRail } from "../LeftRail/LeftRail";
@@ -59,7 +60,10 @@ export function CanvasEditor({ canvasId }: CanvasEditorProps) {
     const component = designSystem.components.find((c) => c.id === componentId);
     if (!component) return;
 
-    const firstVariantId = component.variants[0]?.id ?? "default";
+    // v4: drop with the component's default axis selection. Empty axes
+    // → empty selection. The user can swap to a different combo via
+    // the family view after dropping.
+    const initialSelection = defaultAxisSelectionFor(component);
 
     const frameEl = document.querySelector<HTMLElement>(`[data-frame-id="${frameId}"]`);
     let position = { x: 16, y: 16 };
@@ -75,7 +79,7 @@ export function CanvasEditor({ canvasId }: CanvasEditorProps) {
       };
     }
 
-    addInstance(activeCanvasId, frameId, componentId, firstVariantId, position);
+    addInstance(activeCanvasId, frameId, componentId, initialSelection, position);
   }
 
   return (

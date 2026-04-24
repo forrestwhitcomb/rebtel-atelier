@@ -1,5 +1,5 @@
 import type { Component, Instance, PropValue, TokenRef } from "@rebtel-atelier/spec";
-import { publishedAtVersion } from "@rebtel-atelier/spec";
+import { publishedSnapshotAtVersion } from "@rebtel-atelier/spec";
 
 function isTokenRef(v: unknown): v is TokenRef {
   return (
@@ -53,29 +53,50 @@ export interface JsxSnippet {
  *     ...
  *   />
  *
- * Only instance-level overrides that differ from the pinned variant's
- * published state become explicit props; everything else cascades through
- * the `variant`.
+ * Only instance-level overrides that differ from the resolved variant's
+ * published state become explicit props; everything else cascades.
  *
  * Token refs render as their dot-path string (e.g. `bg="color.card-bg"`).
  * The engineer's codebase can translate that to whatever token import
  * shape it uses — we don't assume one.
+ *
+ * v4 note: chunk 2 still emits a single `variant="..."` prop synthesized
+ * from the instance's axisSelection (single-axis components → the value;
+ * multi-axis → "axis1=v1+axis2=v2"). 3.5b decomposes this into one prop
+ * per axis (`<Button style="primary" size="md" />`).
  */
 export function buildJsxSnippet(component: Component, instance: Instance): JsxSnippet {
-  const variant = component.variants.find((v) => v.id === instance.variantId);
-  const variantPublished = variant ? publishedAtVersion(variant, instance.variantVersion) : {};
+  const snapshot = publishedSnapshotAtVersion(component, instance.variantVersion);
+
+  // Aggregate matching axis-override props at the instance's pinned
+  // version. Skip overrides whose axisSelection isn't a subset of the
+  // instance's selection — same matching rule as the resolver.
+  const matchingAxisProps: Record<string, PropValue> = {};
+  for (const o of snapshot.axisOverrides) {
+    let matches = true;
+    for (const [k, v] of Object.entries(o.axisSelection)) {
+      if (instance.axisSelection[k] !== v) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) Object.assign(matchingAxisProps, o.props);
+  }
 
   const overrideEntries: { key: string; formatted: string | null }[] = [];
   for (const [key, value] of Object.entries(instance.propOverrides)) {
-    const variantValue = variantPublished[key];
-    // Skip overrides that duplicate the variant's own resolved value —
-    // noise in the snippet otherwise.
+    const variantValue = matchingAxisProps[key];
     if (variantValue !== undefined && valuesEqual(value, variantValue)) continue;
     overrideEntries.push({ key, formatted: formatPropValue(value) });
   }
 
+  const variantSlug = synthesizeVariantSlug(instance.axisSelection);
+  const variantProp: { key: string; formatted: string | null }[] =
+    variantSlug !== null
+      ? [{ key: "variant", formatted: JSON.stringify(variantSlug) }]
+      : [];
   const allProps: { key: string; formatted: string | null }[] = [
-    { key: "variant", formatted: JSON.stringify(instance.variantId) },
+    ...variantProp,
     ...overrideEntries,
   ];
 
@@ -89,4 +110,21 @@ export function buildJsxSnippet(component: Component, instance: Instance): JsxSn
       : `<${component.name}\n${propLines.join("\n")}\n/>`;
 
   return { text, props: allProps };
+}
+
+/**
+ * Pretty (commit-message) form of an axis selection. Single-axis: just
+ * the value (e.g. "primary"). Multi-axis: "style=primary+size=md".
+ * Returns null for an empty selection — the snippet then omits the
+ * `variant` prop entirely.
+ *
+ * 3.5b moves this to a shared `axisSlug.ts` in `packages/publish`
+ * along with its branch-form sibling and a parser. For chunk 2 the
+ * snippet only emits the pretty form; branches handled in publish.
+ */
+function synthesizeVariantSlug(axisSelection: Record<string, string>): string | null {
+  const entries = Object.entries(axisSelection);
+  if (entries.length === 0) return null;
+  if (entries.length === 1) return entries[0]![1];
+  return entries.map(([k, v]) => `${k}=${v}`).join("+");
 }

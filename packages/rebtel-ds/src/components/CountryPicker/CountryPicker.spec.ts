@@ -1,15 +1,21 @@
-import type { Component } from "@rebtel-atelier/spec";
-import { countryPickerVariants } from "./CountryPicker.variants.js";
+import { countryPickerPlan, type Component } from "@rebtel-atelier/spec";
+
+// v4 shape — CountryPicker has no axes (axes: []). Instances pin with
+// an empty `axisSelection: {}`. Future axes (e.g. `density`) would
+// extend the plan in `packages/spec/src/migrations/plans/CountryPicker.plan.ts`.
+
+const { axes, supportedStates } = countryPickerPlan;
 
 export const countryPickerComponent: Component = {
   id: "CountryPicker",
   name: "CountryPicker",
   paletteGroup: "productSpecific",
-  version: 1,
+  axes,
+  supportedStates,
   baseSpec: {
+    kind: "primitive",
     id: "CountryPicker:base",
     type: "CountryPicker",
-    variant: null,
     props: {
       countries: [
         { code: "US", name: "United States", flag: "🇺🇸" },
@@ -27,7 +33,27 @@ export const countryPickerComponent: Component = {
     },
     children: [],
   },
-  variants: countryPickerVariants,
+  draft: { axisOverrides: [], stateOverrides: [] },
+  // Empty axes means an empty axisSelection ({}) is the only valid
+  // selection. The single axisOverride keyed `{}` carries the same
+  // token bindings as base — explicit so future axes can layer on top
+  // without changing the resolution path.
+  published: {
+    axisOverrides: [
+      {
+        axisSelection: {},
+        props: {
+          bg: { token: "color.input-bg" },
+          fg: { token: "color.input-text" },
+          border: { token: "color.input-border" },
+          radius: { token: "radius.sm" },
+          labelColor: { token: "color.input-label" },
+        },
+      },
+    ],
+    stateOverrides: [],
+  },
+  publishedVersion: 1,
   propSchema: {
     countries: { category: "content", contentKind: "text", label: "Countries (JSON)" },
     selectedCode: { category: "content", contentKind: "text", label: "Selected country code" },

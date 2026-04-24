@@ -2,12 +2,14 @@
 
 import { useMemo } from "react";
 import type { CSSProperties } from "react";
-import { publishedAtVersion, type PropValue } from "@rebtel-atelier/spec";
+import type { PropValue } from "@rebtel-atelier/spec";
 import { renderInstance, resolveToken } from "@rebtel-atelier/renderer";
 import type { Canvas } from "@rebtel-atelier/spec";
 import {
-  countFromCanvases,
+  axisSelectionsEqual,
   countFromCanvasesByComponent,
+  defaultAxisSelectionFor,
+  synthesizeVariantName,
   useCanvasStore,
   type PushPopupFilter,
 } from "@/stores/canvas";
@@ -15,10 +17,10 @@ import {
 export function PushPopup() {
   const pushPopupOpen = useCanvasStore((s) => s.pushPopupOpen);
   const editScope = useCanvasStore((s) => s.editScope);
-  const editingVariantKey = useCanvasStore((s) => s.editingVariantKey);
+  const editingAxisCombinationKey = useCanvasStore((s) => s.editingAxisCombinationKey);
   const editingBaseKey = useCanvasStore((s) => s.editingBaseKey);
   const closePushPopup = useCanvasStore((s) => s.closePushPopup);
-  const publishVariant = useCanvasStore((s) => s.publishVariant);
+  const publishComponent = useCanvasStore((s) => s.publishComponent);
   const publishBase = useCanvasStore((s) => s.publishBase);
 
   const canvases = useCanvasStore((s) => s.canvases);
@@ -39,10 +41,9 @@ export function PushPopup() {
     | {
         kind: "variant";
         component: import("@rebtel-atelier/spec").Component;
-        variantId: string;
+        axisSelection: Record<string, string>;
         variantName: string;
-        oldPublished: Record<string, PropValue>;
-        draft: Record<string, PropValue>;
+        draftProps: Record<string, PropValue>;
         fromVersion: number;
         instanceCount: number;
         canvasCount: number;
@@ -57,25 +58,25 @@ export function PushPopup() {
       }
     | null = null;
 
-  if (editScope === "variant" && editingVariantKey) {
+  if (editScope === "variant" && editingAxisCombinationKey) {
     const component = designSystem.components.find(
-      (c) => c.id === editingVariantKey.componentId,
+      (c) => c.id === editingAxisCombinationKey.componentId,
     );
-    const variant = component?.variants.find((v) => v.id === editingVariantKey.variantId);
-    if (component && variant) {
-      const stats = countFromCanvases(
-        canvases,
-        editingVariantKey.componentId,
-        editingVariantKey.variantId,
+    if (component) {
+      // Whole-component impact (v4 publish bumps the component's
+      // version, so every instance of this component is in scope for
+      // the per-canvas adopt/stay choice).
+      const stats = countFromCanvasesByComponent(canvases, component.id);
+      const draftEntry = component.draft.axisOverrides.find((o) =>
+        axisSelectionsEqual(o.axisSelection, editingAxisCombinationKey.axisSelection),
       );
       info = {
         kind: "variant",
         component,
-        variantId: editingVariantKey.variantId,
-        variantName: variant.name,
-        oldPublished: publishedAtVersion(variant, variant.publishedVersion),
-        draft: variant.draft,
-        fromVersion: variant.publishedVersion,
+        axisSelection: editingAxisCombinationKey.axisSelection,
+        variantName: synthesizeVariantName(component, editingAxisCombinationKey.axisSelection),
+        draftProps: draftEntry?.props ?? {},
+        fromVersion: component.publishedVersion,
         instanceCount: stats.instanceCount,
         canvasCount: stats.canvasCount,
       };
@@ -85,16 +86,12 @@ export function PushPopup() {
       (c) => c.id === editingBaseKey.componentId,
     );
     if (component) {
-      const stats = countFromCanvasesByComponent(
-        canvases,
-        editingBaseKey.componentId,
-        component.variants.length,
-      );
+      const stats = countFromCanvasesByComponent(canvases, editingBaseKey.componentId);
       info = {
         kind: "base",
         component,
         baseDraft: component.baseDraft ?? {},
-        fromVersion: component.version,
+        fromVersion: component.publishedVersion,
         instanceCount: stats.instanceCount,
         canvasCount: stats.canvasCount,
       };
@@ -105,18 +102,16 @@ export function PushPopup() {
 
   const stripe = info.kind === "variant" ? "#b695ff" : "#f4b64b";
   const changedKeys =
-    info.kind === "variant" ? Object.keys(info.draft) : Object.keys(info.baseDraft);
+    info.kind === "variant" ? Object.keys(info.draftProps) : Object.keys(info.baseDraft);
 
-  // Build before/after preview instances so the user can see what the change
-  // looks like in isolation. We render via the normal renderer — no DS math
-  // in the popup, just different inputs.
+  // Build a preview instance for the before/after column.
   const previewId = "__push_preview__";
   const previewInstance =
     info.kind === "variant"
       ? {
           id: previewId,
           componentId: info.component.id,
-          variantId: info.variantId,
+          axisSelection: { ...info.axisSelection },
           variantVersion: info.fromVersion,
           propOverrides: {} as Record<string, PropValue>,
           position: { x: 0, y: 0 },
@@ -125,8 +120,8 @@ export function PushPopup() {
       : {
           id: previewId,
           componentId: info.component.id,
-          variantId: info.component.variants[0]?.id ?? "default",
-          variantVersion: 1,
+          axisSelection: defaultAxisSelectionFor(info.component),
+          variantVersion: info.fromVersion,
           propOverrides: {} as Record<string, PropValue>,
           position: { x: 0, y: 0 },
           frameId: "__preview__",
@@ -184,9 +179,10 @@ export function PushPopup() {
         <BeforeAfter
           kind={info.kind}
           component={info.component}
+          designSystem={designSystem}
           previewInstance={previewInstance}
-          oldVariantPublished={info.kind === "variant" ? info.oldPublished : undefined}
-          variantDraft={info.kind === "variant" ? info.draft : undefined}
+          variantAxisSelection={info.kind === "variant" ? info.axisSelection : undefined}
+          variantDraftProps={info.kind === "variant" ? info.draftProps : undefined}
           baseDraft={info.kind === "base" ? info.baseDraft : undefined}
         />
 
@@ -223,9 +219,7 @@ export function PushPopup() {
             canvases. Files touched:{" "}
             <code style={{ fontSize: 11 }}>
               packages/rebtel-ds/src/components/{info.component.name}/
-              {info.kind === "variant"
-                ? `${info.component.name}.variants.ts`
-                : `${info.component.name}.spec.ts`}
+              {info.component.name}.spec.ts
             </code>
           </div>
         </section>
@@ -234,7 +228,6 @@ export function PushPopup() {
           <ImpactPreview
             canvases={canvases}
             componentId={info.component.id}
-            variantId={info.variantId}
             filter={pushPopupFilter}
             onFilter={setPushPopupFilter}
             choices={canvasPublishChoices}
@@ -315,7 +308,7 @@ export function PushPopup() {
               disabled={changedKeys.length === 0 || isPublishing}
               onClick={() => {
                 if (info.kind === "variant") {
-                  publishVariant(info.component.id, info.variantId);
+                  publishComponent(info.component.id);
                 } else {
                   publishBase(info.component.id);
                 }
@@ -351,7 +344,6 @@ export function PushPopup() {
 interface ImpactPreviewProps {
   canvases: Record<string, Canvas>;
   componentId: string;
-  variantId: string;
   filter: PushPopupFilter;
   onFilter: (f: PushPopupFilter) => void;
   choices: Record<string, boolean>;
@@ -369,7 +361,6 @@ interface ImpactRow {
 function ImpactPreview({
   canvases,
   componentId,
-  variantId,
   filter,
   onFilter,
   choices,
@@ -378,16 +369,18 @@ function ImpactPreview({
   nextVersion,
   disabled,
 }: ImpactPreviewProps) {
+  // v4 publish bumps the whole component, so impact is keyed by
+  // componentId only — every instance of this component on every
+  // canvas is in scope. Per-canvas opt-in still applies.
   const rows: ImpactRow[] = useMemo(() => {
     const out: ImpactRow[] = [];
     for (const c of Object.values(canvases)) {
       let n = 0;
       for (const inst of c.instances) {
-        if (inst.componentId === componentId && inst.variantId === variantId) n += 1;
+        if (inst.componentId === componentId) n += 1;
       }
       if (n > 0) out.push({ canvas: c, instanceCount: n });
     }
-    // Stable order: draft before shipped, then alpha by name.
     out.sort((a, b) => {
       if (a.canvas.status !== b.canvas.status) {
         return a.canvas.status === "draft" ? -1 : 1;
@@ -395,7 +388,7 @@ function ImpactPreview({
       return a.canvas.name.localeCompare(b.canvas.name);
     });
     return out;
-  }, [canvases, componentId, variantId]);
+  }, [canvases, componentId]);
 
   const filtered = rows.filter((r) => {
     if (filter === "all") return true;
@@ -436,7 +429,7 @@ function ImpactPreview({
             fontStyle: "italic",
           }}
         >
-          No canvases use this variant yet. It will become available once published.
+          No canvases use this component yet. It will become available once published.
         </div>
       ) : filtered.length === 0 ? (
         <div
@@ -525,8 +518,6 @@ function CanvasImpactRow({
   const isDraft = canvas.status === "draft";
   const badgeBg = isDraft ? "#f4b64b" : "#6b7280";
 
-  // Thumbnail stub — a flat rect colored by draft/shipped, with a small
-  // chip showing the instance count. Real thumbnails come later.
   const thumb = (
     <div
       style={{
@@ -631,52 +622,58 @@ function CanvasImpactRow({
 interface BeforeAfterProps {
   kind: "variant" | "base";
   component: import("@rebtel-atelier/spec").Component;
+  designSystem: import("@rebtel-atelier/spec").DesignSystem;
   previewInstance: import("@rebtel-atelier/spec").Instance;
-  oldVariantPublished?: Record<string, PropValue>;
-  variantDraft?: Record<string, PropValue>;
+  variantAxisSelection?: Record<string, string>;
+  variantDraftProps?: Record<string, PropValue>;
   baseDraft?: Record<string, PropValue>;
 }
 
 function BeforeAfter({
   kind,
   component,
+  designSystem,
   previewInstance,
-  oldVariantPublished,
-  variantDraft,
+  variantAxisSelection,
+  variantDraftProps,
   baseDraft,
 }: BeforeAfterProps) {
-  // Build two copies of the component: one reflecting current state (before push)
-  // and one reflecting post-push state. Render via the normal renderer.
+  // Build two copies of the component for before / after, then render
+  // each via the normal renderer. v4: changes live as draft override
+  // entries on the component, not on a per-variant published bag.
   const { beforeComponent, afterComponent } = useMemo(() => {
-    if (kind === "variant") {
-      const variantId = previewInstance.variantId;
-      // Clear publishedHistory on the preview variant so the resolver falls
-      // back to `published` — which we set explicitly here for before/after.
+    if (kind === "variant" && variantAxisSelection) {
       const before: typeof component = {
         ...component,
-        variants: component.variants.map((v) =>
-          v.id === variantId
-            ? {
-                ...v,
-                draft: {},
-                published: oldVariantPublished ?? v.published,
-                publishedHistory: undefined,
-              }
-            : v,
-        ),
+        draft: { axisOverrides: [], stateOverrides: [] },
+        publishedHistory: undefined,
       };
+      // After: layer the draft override on top of the matching
+      // published axis override (or append if no match).
+      const matchIndex = component.published.axisOverrides.findIndex((o) => {
+        const a = o.axisSelection;
+        const b = variantAxisSelection;
+        const ak = Object.keys(a);
+        if (ak.length !== Object.keys(b).length) return false;
+        return ak.every((k) => a[k] === b[k]);
+      });
+      const merged = [...component.published.axisOverrides];
+      if (matchIndex >= 0) {
+        merged[matchIndex] = {
+          ...merged[matchIndex]!,
+          props: { ...merged[matchIndex]!.props, ...(variantDraftProps ?? {}) },
+        };
+      } else {
+        merged.push({
+          axisSelection: { ...variantAxisSelection },
+          props: { ...(variantDraftProps ?? {}) },
+        });
+      }
       const after: typeof component = {
         ...component,
-        variants: component.variants.map((v) =>
-          v.id === variantId
-            ? {
-                ...v,
-                draft: {},
-                published: { ...(oldVariantPublished ?? v.published), ...(variantDraft ?? {}) },
-                publishedHistory: undefined,
-              }
-            : v,
-        ),
+        published: { ...component.published, axisOverrides: merged },
+        draft: { axisOverrides: [], stateOverrides: [] },
+        publishedHistory: undefined,
       };
       return { beforeComponent: before, afterComponent: after };
     }
@@ -694,7 +691,7 @@ function BeforeAfter({
       baseDraft: {},
     };
     return { beforeComponent: before, afterComponent: after };
-  }, [kind, component, previewInstance.variantId, oldVariantPublished, variantDraft, baseDraft]);
+  }, [kind, component, variantAxisSelection, variantDraftProps, baseDraft]);
   void resolveToken;
 
   const column: CSSProperties = {
@@ -720,13 +717,16 @@ function BeforeAfter({
     <section style={{ display: "flex", gap: 12 }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={label}>Before</div>
-        <div style={column}>{renderInstance(previewInstance, beforeComponent)}</div>
+        <div style={column}>
+          {renderInstance(previewInstance, beforeComponent, { designSystem })}
+        </div>
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={label}>After</div>
-        <div style={column}>{renderInstance(previewInstance, afterComponent)}</div>
+        <div style={column}>
+          {renderInstance(previewInstance, afterComponent, { designSystem })}
+        </div>
       </div>
     </section>
   );
 }
-

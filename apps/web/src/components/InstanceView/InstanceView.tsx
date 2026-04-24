@@ -3,7 +3,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import { renderInstance } from "@rebtel-atelier/renderer";
 import type { DraftScope, Instance } from "@rebtel-atelier/spec";
-import { useCanvasStore } from "@/stores/canvas";
+import { axisSelectionsEqual, useCanvasStore } from "@/stores/canvas";
 
 export function InstanceView({ instance }: { instance: Instance }) {
   const selection = useCanvasStore((s) => s.selection);
@@ -11,24 +11,25 @@ export function InstanceView({ instance }: { instance: Instance }) {
   const component = useCanvasStore((s) =>
     s.designSystem.components.find((c) => c.id === instance.componentId),
   );
+  const designSystem = useCanvasStore((s) => s.designSystem);
   const editScope = useCanvasStore((s) => s.editScope);
-  const editingVariantKey = useCanvasStore((s) => s.editingVariantKey);
+  const editingAxisCombinationKey = useCanvasStore((s) => s.editingAxisCombinationKey);
   const editingBaseKey = useCanvasStore((s) => s.editingBaseKey);
-  const hoveredVariantId = useCanvasStore((s) => s.hoveredVariantId);
+  const hoveredAxisSelection = useCanvasStore((s) => s.hoveredAxisSelection);
 
   if (!component) return null;
 
-  // Only the actively-edited variant/base resolves against draft. This is
-  // what keeps draft-vs-published a real boundary on the canvas: other
-  // instances of other variants stay on their pinned published version.
+  // Only the actively-edited combo / base resolves against draft. This
+  // keeps draft-vs-published a real boundary on the canvas: other
+  // instances stay on their pinned published version.
   let draftScope: DraftScope = null;
   if (
     editScope === "variant" &&
-    editingVariantKey &&
-    editingVariantKey.componentId === instance.componentId &&
-    editingVariantKey.variantId === instance.variantId
+    editingAxisCombinationKey &&
+    editingAxisCombinationKey.componentId === instance.componentId &&
+    axisSelectionsEqual(editingAxisCombinationKey.axisSelection, instance.axisSelection)
   ) {
-    draftScope = "variant";
+    draftScope = "component";
   } else if (
     editScope === "base" &&
     editingBaseKey &&
@@ -39,15 +40,14 @@ export function InstanceView({ instance }: { instance: Instance }) {
 
   const selected = selection === instance.id;
 
-  // Hover preview is SELECTION-scoped — only the selected instance re-renders
-  // as the hovered variant. Others are never affected. Transient render-only
-  // override: we pass `previewVariantId` to the renderer but never mutate state.
+  // Hover preview is SELECTION-scoped — only the selected instance
+  // re-renders as the hovered combo. Transient render-only override:
+  // we pass `previewAxisSelection` to the renderer but never mutate state.
   const previewActive =
     selected &&
-    hoveredVariantId !== null &&
-    hoveredVariantId !== instance.variantId &&
-    component.variants.some((v) => v.id === hoveredVariantId);
-  const previewVariantId = previewActive ? hoveredVariantId ?? undefined : undefined;
+    hoveredAxisSelection !== null &&
+    !axisSelectionsEqual(hoveredAxisSelection, instance.axisSelection);
+  const previewAxisSelection = previewActive ? hoveredAxisSelection ?? undefined : undefined;
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -74,7 +74,11 @@ export function InstanceView({ instance }: { instance: Instance }) {
       onClick={handleClick}
       style={style}
     >
-      {renderInstance(instance, component, { draftScope, previewVariantId })}
+      {renderInstance(instance, component, {
+        draftScope,
+        previewAxisSelection,
+        designSystem,
+      })}
     </div>
   );
 }

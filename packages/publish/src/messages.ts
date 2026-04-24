@@ -1,5 +1,10 @@
-import type { Component, Variant } from "@rebtel-atelier/spec";
-import { diffVariantProps, formatDiffLine, type VariantDiffEntry } from "./diffVariant.js";
+import type { Component, ComponentOverrideSnapshot } from "@rebtel-atelier/spec";
+import {
+  diffOverrideSnapshots,
+  formatDiffLine,
+  type AxisOverrideDiff,
+  type VariantDiffEntry,
+} from "./diffVariant.js";
 
 /**
  * Per-canvas impact data for the PR body's "Impact" section.
@@ -12,14 +17,18 @@ export interface CanvasImpactRow {
   canvasName: string;
   instanceCount: number;
   status: "draft" | "shipped";
-  /** True if this canvas adopts the new variant version on publish. */
+  /** True if this canvas adopts the new component version on publish. */
   adoptsNewVersion: boolean;
 }
 
 export interface BuildMessageOptions {
   component: Component;
-  variantBefore: Variant;
-  variantAfter: Variant;
+  /** Pre-publish snapshot (matches `component.publishedHistory[previousVersion]`). */
+  previousPublished: ComponentOverrideSnapshot;
+  /** Post-publish snapshot (matches the about-to-write `component.published`). */
+  nextPublished: ComponentOverrideSnapshot;
+  previousVersion: number;
+  nextVersion: number;
   impacts: CanvasImpactRow[];
   /** Optional author display name for the "Context" section. */
   editor?: string;
@@ -35,52 +44,95 @@ function describeImpactSummary(impacts: CanvasImpactRow[]): string {
   }`;
 }
 
-function diffBulletList(diff: VariantDiffEntry[], bulletPrefix = "- "): string {
+function diffBulletList(diff: VariantDiffEntry[], bulletPrefix = "  - "): string {
   if (diff.length === 0) return `${bulletPrefix}(no property changes)`;
   return diff.map((e) => `${bulletPrefix}${formatDiffLine(e)}`).join("\n");
 }
 
+function describeAxisDiffs(diffs: AxisOverrideDiff[]): string {
+  if (diffs.length === 0) return "_(no axis-override changes)_";
+  return diffs
+    .map((d) => `- **${d.slug}**\n${diffBulletList(d.entries, "  - ")}`)
+    .join("\n");
+}
+
 // ── Commit message ─────────────────────────────────────────
 // Format:
-//   [atelier] ComponentName: update variant-slug variant
+//   [atelier] ComponentName: update style=primary[+axis2=v2,…] (and N more)
 //
-//   - key: before → after
+//   - axisCombo:
+//     - key: before → after
 //   - ...
 
 export function buildCommitMessage(opts: BuildMessageOptions): string {
-  const { component, variantBefore, variantAfter } = opts;
-  const diff = diffVariantProps(variantBefore.published, variantAfter.published);
-  const subject = `[atelier] ${component.name}: update ${variantAfter.id} variant`;
-  const body = diffBulletList(diff);
-  return `${subject}\n\n${body}\n`;
+  const { component, previousPublished, nextPublished, previousVersion, nextVersion } = opts;
+  const { axes, states } = diffOverrideSnapshots(previousPublished, nextPublished);
+
+  const subjectSlug = (() => {
+    if (axes.length === 0) {
+      if (states.length === 0) return `update component`;
+      return `update state ${states[0]!.state}${states.length > 1 ? ` (and ${states.length - 1} more)` : ""}`;
+    }
+    const head = axes[0]!.slug;
+    const more = axes.length > 1 ? ` (and ${axes.length - 1} more)` : "";
+    return `update ${head}${more}`;
+  })();
+
+  const subject = `[atelier] ${component.name}: ${subjectSlug} (v${previousVersion} → v${nextVersion})`;
+
+  const bodyLines: string[] = [];
+  if (axes.length > 0) {
+    bodyLines.push("Axis overrides:");
+    for (const d of axes) {
+      bodyLines.push(`- ${d.slug}`);
+      bodyLines.push(diffBulletList(d.entries, "  - "));
+    }
+  }
+  if (states.length > 0) {
+    if (bodyLines.length > 0) bodyLines.push("");
+    bodyLines.push("State overrides:");
+    for (const s of states) {
+      bodyLines.push(`- ${s.state}`);
+      bodyLines.push(diffBulletList(s.entries, "  - "));
+    }
+  }
+  if (bodyLines.length === 0) bodyLines.push("(no property changes)");
+
+  return `${subject}\n\n${bodyLines.join("\n")}\n`;
 }
 
 // ── PR body ────────────────────────────────────────────────
-// Sections: What changed / Impact / Context / Dev notes.
 
 export function buildPrBody(opts: BuildMessageOptions): string {
-  const { component, variantBefore, variantAfter, impacts, editor, atelierUrl } = opts;
-  const diff = diffVariantProps(variantBefore.published, variantAfter.published);
+  const { component, previousPublished, nextPublished, previousVersion, nextVersion, impacts, editor, atelierUrl } = opts;
+  const { axes, states } = diffOverrideSnapshots(previousPublished, nextPublished);
 
   const whatChanged =
     `## What changed\n` +
-    `Updated the \`${variantAfter.id}\` variant of \`${component.name}\`.\n\n` +
-    `### Property changes\n` +
-    diffBulletList(diff) +
-    `\n`;
+    `Updated \`${component.name}\` (v${previousVersion} → v${nextVersion}).\n\n` +
+    `### Axis overrides\n` +
+    describeAxisDiffs(axes) +
+    `\n` +
+    (states.length > 0
+      ? `\n### State overrides\n` +
+        states
+          .map((s) => `- **${s.state}**\n${diffBulletList(s.entries, "  - ")}`)
+          .join("\n") +
+        `\n`
+      : "");
 
   const impactLines = impacts.length
     ? impacts
         .map((r) => {
           const pinLabel = r.adoptsNewVersion
-            ? `adopts v${variantAfter.publishedVersion}`
-            : `pinned to v${variantBefore.publishedVersion}`;
+            ? `adopts v${nextVersion}`
+            : `pinned to v${previousVersion}`;
           return `- ${r.canvasName} (${r.instanceCount} instance${
             r.instanceCount === 1 ? "" : "s"
           }, ${r.status} — ${pinLabel})`;
         })
         .join("\n")
-    : "- No canvases currently use this variant.";
+    : "- No canvases currently use this component.";
 
   const impact =
     `## Impact\n` +
@@ -97,14 +149,18 @@ export function buildPrBody(opts: BuildMessageOptions): string {
   const devNotes =
     `## Dev notes\n` +
     `- Token references resolved against \`packages/rebtel-ds/src/tokens.ts\`\n` +
-    `- File format: auto-generated from variant spec, safe to merge as-is\n` +
-    `- Visual checks: not yet implemented (session 3 ships manual review only)\n`;
+    `- File format: v4 component spec (axes + state overrides)\n` +
+    `- Visual checks: not yet implemented (manual review only)\n`;
 
   return [whatChanged, impact, context, devNotes].join("\n");
 }
 
 // ── Branch name ────────────────────────────────────────────
-// Pattern: atelier/variant/<component-slug>-<variant-slug>-<short-hash>
+// Pattern: atelier/component/<component-slug>-<short-hash>
+//
+// v3 branched per-variant; v4 publishes the whole component, so the
+// branch is per-component too. Short hash keeps successive publishes of
+// the same component distinguishable.
 
 function slugify(s: string): string {
   return s
@@ -113,10 +169,6 @@ function slugify(s: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export function buildBranchName(
-  component: Component,
-  variantId: string,
-  shortHash: string,
-): string {
-  return `atelier/variant/${slugify(component.id)}-${slugify(variantId)}-${shortHash}`;
+export function buildBranchName(component: Component, shortHash: string): string {
+  return `atelier/component/${slugify(component.id)}-${shortHash}`;
 }

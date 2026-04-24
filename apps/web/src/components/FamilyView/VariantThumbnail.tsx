@@ -2,13 +2,18 @@
 
 import type { CSSProperties, MouseEventHandler } from "react";
 import { renderInstance } from "@rebtel-atelier/renderer";
-import type { Component, Variant, Instance } from "@rebtel-atelier/spec";
+import type { Component, DesignSystem, Instance } from "@rebtel-atelier/spec";
 
 interface VariantThumbnailProps {
   component: Component;
-  variant: Variant;
-  /** Instance we're previewing from — we reuse its prop overrides for a more accurate preview. */
+  /** Axis combination this thumbnail represents. */
+  axisSelection: Record<string, string>;
+  /** Synthesized display name (e.g. "primary", or "primary / md"). */
+  variantName: string;
+  /** Source instance — its prop overrides flow into the thumbnail preview. */
   sourceInstance: Instance;
+  /** Required when the component composes — the renderer fills slots from here. */
+  designSystem: DesignSystem;
   isCurrent: boolean;
   usageCount: number;
   onHoverEnter: () => void;
@@ -22,8 +27,10 @@ const RENDER_SCALE = 0.45;
 
 export function VariantThumbnail({
   component,
-  variant,
+  axisSelection,
+  variantName,
   sourceInstance,
+  designSystem,
   isCurrent,
   usageCount,
   onHoverEnter,
@@ -31,13 +38,15 @@ export function VariantThumbnail({
   onClick,
 }: VariantThumbnailProps) {
   // Build a preview instance using the source instance's overrides so the
-  // thumbnail feels like "what this instance would look like as this variant"
-  // rather than a generic gallery item.
+  // thumbnail feels like "what this instance would look like as this combo"
+  // rather than a generic gallery item. Composition: the renderer needs
+  // the design system to fill any ComponentRef slots in the parent's
+  // baseSpec — passed below.
   const previewInstance: Instance = {
     ...sourceInstance,
-    id: `${sourceInstance.id}__fv_${variant.id}`,
-    variantId: variant.id,
-    variantVersion: variant.publishedVersion,
+    id: `${sourceInstance.id}__fv_${variantName}`,
+    axisSelection: { ...axisSelection },
+    variantVersion: component.publishedVersion,
   };
 
   const wrapperStyle: CSSProperties = {
@@ -65,7 +74,6 @@ export function VariantThumbnail({
     justifyContent: "center",
   };
 
-  // Scale the rendered component down — real renderer output, not an icon.
   const renderWrapStyle: CSSProperties = {
     transform: `scale(${RENDER_SCALE})`,
     transformOrigin: "center center",
@@ -91,7 +99,9 @@ export function VariantThumbnail({
       onClick={onClick}
     >
       <div style={frameStyle}>
-        <div style={renderWrapStyle}>{renderInstance(previewInstance, component)}</div>
+        <div style={renderWrapStyle}>
+          {renderInstance(previewInstance, component, { designSystem })}
+        </div>
         {isCurrent ? (
           <span
             style={{
@@ -108,7 +118,7 @@ export function VariantThumbnail({
         ) : null}
       </div>
       <div style={labelRowStyle}>
-        <span style={{ fontWeight: 500 }}>{variant.name}</span>
+        <span style={{ fontWeight: 500 }}>{variantName}</span>
         <span style={{ color: "var(--atelier-panel-muted)", fontSize: 10 }}>
           {usageCount === 0 ? "unused" : `used ${usageCount}×`}
         </span>

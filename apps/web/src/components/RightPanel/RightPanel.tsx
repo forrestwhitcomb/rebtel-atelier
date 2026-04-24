@@ -3,7 +3,7 @@
 import type { ChangeEvent, CSSProperties } from "react";
 import { useMemo } from "react";
 import {
-  publishedAtVersion,
+  publishedSnapshotAtVersion,
   resolveProps,
   type Component,
   type PropSchemaEntry,
@@ -13,9 +13,10 @@ import {
 } from "@rebtel-atelier/spec";
 import { resolveToken } from "@rebtel-atelier/renderer";
 import {
-  countFromCanvases,
+  countAxisCombinationUsage,
   countFromCanvasesByComponent,
   selectActiveCanvas,
+  synthesizeVariantName,
   useCanvasStore,
   type EditScope,
   type RightPanelTab,
@@ -37,7 +38,7 @@ export function RightPanel() {
   const designSystem = useCanvasStore((s) => s.designSystem);
 
   const editScope = useCanvasStore((s) => s.editScope);
-  const editingVariantKey = useCanvasStore((s) => s.editingVariantKey);
+  const editingAxisCombinationKey = useCanvasStore((s) => s.editingAxisCombinationKey);
   const editingBaseKey = useCanvasStore((s) => s.editingBaseKey);
   const pendingScopeEscalation = useCanvasStore((s) => s.pendingScopeEscalation);
   const rightPanelTab = useCanvasStore((s) => s.rightPanelTab);
@@ -48,7 +49,7 @@ export function RightPanel() {
   const cancelScopeEscalation = useCanvasStore((s) => s.cancelScopeEscalation);
   const resetScopeToInstance = useCanvasStore((s) => s.resetScopeToInstance);
   const updateInstanceProps = useCanvasStore((s) => s.updateInstanceProps);
-  const updateVariantDraft = useCanvasStore((s) => s.updateVariantDraft);
+  const updateAxisOverrideDraft = useCanvasStore((s) => s.updateAxisOverrideDraft);
   const updateBaseDraft = useCanvasStore((s) => s.updateBaseDraft);
 
   // Token rosters for the picker, keyed by category. Lazily extended if a
@@ -66,34 +67,35 @@ export function RightPanel() {
   if (!selection || !instance || !component || !activeCanvas) return null;
 
   // ── Resolve props for the *currently-scoped* target ──────────
-  // Instance scope: show base ← variant.published@version ← instance overrides.
-  // Variant scope:  show base ← variant.published ← variant.draft  (latest version).
-  // Base scope:     show base ← baseDraft                           (variant agnostic).
+  // Instance scope: four-layer resolve at the instance's own selection / version.
+  // Variant scope:  base ← matched-axis-overrides (published) ← matching draft override.
+  // Base scope:     base ← baseDraft (axis-agnostic).
   let displayedProps: Record<string, PropValue>;
-  if (editScope === "variant" && editingVariantKey) {
-    const comp = component; // same component in session 2
-    const variant = comp.variants.find((v) => v.id === editingVariantKey.variantId);
-    displayedProps = {
-      ...comp.baseSpec.props,
-      ...(variant ? publishedAtVersion(variant) : {}),
-      ...(variant?.draft ?? {}),
-    };
+  if (editScope === "variant" && editingAxisCombinationKey) {
+    displayedProps = resolveProps(
+      component,
+      editingAxisCombinationKey.axisSelection,
+      undefined,
+      { draftScope: "component" },
+    );
   } else if (editScope === "base" && editingBaseKey) {
     displayedProps = {
       ...component.baseSpec.props,
       ...(component.baseDraft ?? {}),
     };
   } else {
-    displayedProps = resolveProps(component, instance.variantId, instance.propOverrides, {
+    displayedProps = resolveProps(component, instance.axisSelection, instance.propOverrides, {
       variantVersion: instance.variantVersion,
     });
   }
 
   const setProp = (key: string, value: PropValue) => {
-    if (editScope === "variant" && editingVariantKey) {
-      updateVariantDraft(editingVariantKey.componentId, editingVariantKey.variantId, {
-        [key]: value,
-      });
+    if (editScope === "variant" && editingAxisCombinationKey) {
+      updateAxisOverrideDraft(
+        editingAxisCombinationKey.componentId,
+        editingAxisCombinationKey.axisSelection,
+        { [key]: value },
+      );
     } else if (editScope === "base" && editingBaseKey) {
       updateBaseDraft(editingBaseKey.componentId, { [key]: value });
     } else {
@@ -102,17 +104,18 @@ export function RightPanel() {
   };
 
   const scopeHeader = (() => {
-    if (editScope === "variant" && editingVariantKey) {
-      const v = component.variants.find((v) => v.id === editingVariantKey.variantId);
-      return { kind: "VARIANT", title: v?.name ?? editingVariantKey.variantId };
+    if (editScope === "variant" && editingAxisCombinationKey) {
+      return {
+        kind: "VARIANT",
+        title: synthesizeVariantName(component, editingAxisCombinationKey.axisSelection),
+      };
     }
     if (editScope === "base" && editingBaseKey) {
       return { kind: "BASE", title: component.name };
     }
-    const v = component.variants.find((v) => v.id === instance.variantId);
     return {
       kind: "INSTANCE",
-      title: `${component.name} · ${v?.name ?? instance.variantId}`,
+      title: `${component.name} · ${synthesizeVariantName(component, instance.axisSelection)}`,
       meta: `v${instance.variantVersion}`,
     };
   })();
@@ -208,7 +211,7 @@ export function RightPanel() {
             <ScopeConfirm
               pending={pendingScopeEscalation}
               component={component}
-              variantId={instance.variantId}
+              axisSelection={instance.axisSelection}
               onCancel={cancelScopeEscalation}
               onConfirm={confirmScopeEscalation}
             />
@@ -344,27 +347,28 @@ function ScopeSelector({ editScope, pending, onSelect }: ScopeSelectorProps) {
 interface ScopeConfirmProps {
   pending: EditScope;
   component: Component;
-  variantId: string;
+  axisSelection: Record<string, string>;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-function ScopeConfirm({ pending, component, variantId, onCancel, onConfirm }: ScopeConfirmProps) {
+function ScopeConfirm({ pending, component, axisSelection, onCancel, onConfirm }: ScopeConfirmProps) {
   // Avoid deriving objects inside the selector — Zustand's snapshot cache
   // trips on fresh references each call. Compute stats from a stable slice.
   const canvases = useCanvasStore((s) => s.canvases);
   const stats =
     pending === "variant"
-      ? countFromCanvases(canvases, component.id, variantId)
-      : countFromCanvasesByComponent(canvases, component.id, component.variants.length);
+      ? countAxisCombinationUsage(canvases, component.id, axisSelection)
+      : countFromCanvasesByComponent(canvases, component.id);
 
   const isBase = pending === "base";
   const stripe = isBase ? "#f4b64b" : "#b695ff";
   const body = isBase
-    ? `Changes to the base will cascade to all ${
-        "variantCount" in stats ? stats.variantCount : "—"
-      } variants and ${stats.instanceCount} instances across ${stats.canvasCount} canvases.`
-    : `You're about to edit the variant. Changes will affect ${stats.instanceCount} instances across ${stats.canvasCount} canvases once published.`;
+    ? `Changes to the base will cascade to all ${component.axes.reduce(
+        (n, a) => n * a.options.length,
+        component.axes.length === 0 ? 1 : 1,
+      )} variant combinations and ${stats.instanceCount} instances across ${stats.canvasCount} canvases.`
+    : `You're about to edit this variant combination. Changes will affect ${stats.instanceCount} instances across ${stats.canvasCount} canvases once published.`;
 
   return (
     <div

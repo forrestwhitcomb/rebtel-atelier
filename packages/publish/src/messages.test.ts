@@ -1,64 +1,111 @@
 import { describe, it, expect } from "vitest";
-import type { Component, Variant } from "@rebtel-atelier/spec";
+import type { Component, ComponentOverrideSnapshot } from "@rebtel-atelier/spec";
 import { buildBranchName, buildCommitMessage, buildPrBody } from "./messages.js";
 
 const component: Component = {
   id: "ProductCard",
   name: "ProductCard",
   paletteGroup: "productSpecific",
-  version: 1,
+  axes: [{ name: "emphasis", options: ["default", "highlighted"], default: "default" }],
+  supportedStates: ["default", "hover", "pressed"],
   baseSpec: {
+    kind: "primitive",
     id: "ProductCard:base",
     type: "ProductCard",
-    variant: null,
     props: {},
     children: [],
   },
-  variants: [],
-};
-
-const before: Variant = {
-  id: "mtu-bundle-highlighted",
-  name: "MTU Bundle (Highlighted)",
-  extends: "mtu-bundle",
-  draft: {},
-  published: {
-    bg: { token: "color.card-bg" },
-    radius: { token: "radius.lg" },
-  },
+  draft: { axisOverrides: [], stateOverrides: [] },
+  published: { axisOverrides: [], stateOverrides: [] },
   publishedVersion: 3,
 };
 
-const after: Variant = {
-  ...before,
-  published: {
-    bg: { token: "color.home-card-mtu-bg" },
-    radius: { token: "radius.xl" },
-    badge: "Most popular",
-  },
-  publishedVersion: 4,
+const previousPublished: ComponentOverrideSnapshot = {
+  axisOverrides: [
+    {
+      axisSelection: { emphasis: "highlighted" },
+      props: {
+        bg: { token: "color.card-bg" },
+        radius: { token: "radius.lg" },
+      },
+    },
+  ],
+  stateOverrides: [],
+};
+
+const nextPublished: ComponentOverrideSnapshot = {
+  axisOverrides: [
+    {
+      axisSelection: { emphasis: "highlighted" },
+      props: {
+        bg: { token: "color.home-card-mtu-bg" },
+        radius: { token: "radius.xl" },
+        badge: "Most popular",
+      },
+    },
+  ],
+  stateOverrides: [],
 };
 
 describe("buildCommitMessage", () => {
-  it("starts with the [atelier] prefix and names the component and variant", () => {
-    const msg = buildCommitMessage({ component, variantBefore: before, variantAfter: after, impacts: [] });
-    expect(msg.split("\n")[0]).toBe("[atelier] ProductCard: update mtu-bundle-highlighted variant");
+  it("starts with the [atelier] prefix and names the changed axis combo", () => {
+    const msg = buildCommitMessage({
+      component,
+      previousPublished,
+      nextPublished,
+      previousVersion: 3,
+      nextVersion: 4,
+      impacts: [],
+    });
+    const subject = msg.split("\n")[0];
+    expect(subject).toBe("[atelier] ProductCard: update emphasis=highlighted (v3 → v4)");
   });
 
-  it("includes one bullet per property change", () => {
-    const msg = buildCommitMessage({ component, variantBefore: before, variantAfter: after, impacts: [] });
+  it("includes one bullet per property change inside the axis combo", () => {
+    const msg = buildCommitMessage({
+      component,
+      previousPublished,
+      nextPublished,
+      previousVersion: 3,
+      nextVersion: 4,
+      impacts: [],
+    });
     expect(msg).toContain("`bg`: `color.card-bg` → `color.home-card-mtu-bg`");
     expect(msg).toContain("`radius`: `radius.lg` → `radius.xl`");
     expect(msg).toContain("Added `badge` with value");
   });
+
+  it("annotates the subject when more than one axis combo changed", () => {
+    const next: ComponentOverrideSnapshot = {
+      ...nextPublished,
+      axisOverrides: [
+        ...nextPublished.axisOverrides,
+        {
+          axisSelection: { emphasis: "default" },
+          props: { bg: { token: "color.new-default-bg" } },
+        },
+      ],
+    };
+    const msg = buildCommitMessage({
+      component,
+      previousPublished,
+      nextPublished: next,
+      previousVersion: 3,
+      nextVersion: 4,
+      impacts: [],
+    });
+    expect(msg.split("\n")[0]).toContain("(and 1 more)");
+  });
 });
 
 describe("buildPrBody", () => {
-  it("has the four required sections", () => {
+  it("has the four required sections + the new axis-keyed shape", () => {
     const body = buildPrBody({
       component,
-      variantBefore: before,
-      variantAfter: after,
+      previousPublished,
+      nextPublished,
+      previousVersion: 3,
+      nextVersion: 4,
       impacts: [
         {
           canvasId: "c1",
@@ -81,7 +128,10 @@ describe("buildPrBody", () => {
     expect(body).toContain("## Impact");
     expect(body).toContain("## Context");
     expect(body).toContain("## Dev notes");
-    // Impact section mentions total instances and per-canvas rows
+    // Axis section present
+    expect(body).toContain("### Axis overrides");
+    expect(body).toContain("**emphasis=highlighted**");
+    // Impact section
     expect(body).toContain("8 instances across 2 canvases");
     expect(body).toContain("Cuba top-up");
     expect(body).toContain("adopts v4");
@@ -91,17 +141,20 @@ describe("buildPrBody", () => {
   it("handles the empty-impact case", () => {
     const body = buildPrBody({
       component,
-      variantBefore: before,
-      variantAfter: after,
+      previousPublished,
+      nextPublished,
+      previousVersion: 3,
+      nextVersion: 4,
       impacts: [],
     });
-    expect(body).toContain("No canvases currently use this variant.");
+    expect(body).toContain("No canvases currently use this component.");
   });
 });
 
 describe("buildBranchName", () => {
-  it("slugifies component and variant ids", () => {
-    const name = buildBranchName(component, "mtu-bundle-highlighted", "a1b2c3d");
-    expect(name).toBe("atelier/variant/productcard-mtu-bundle-highlighted-a1b2c3d");
+  it("produces atelier/component/<slug>-<hash>", () => {
+    expect(buildBranchName(component, "a1b2c3d")).toBe(
+      "atelier/component/productcard-a1b2c3d",
+    );
   });
 });

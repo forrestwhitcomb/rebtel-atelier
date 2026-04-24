@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
 import type {
+  AxisOverride,
   Canvas,
   Component,
   ComponentTypeId,
@@ -10,9 +11,8 @@ import type {
   Instance,
   PropValue,
   ToolMode,
-  Variant,
-  VariantProps,
 } from "@rebtel-atelier/spec";
+import { defaultAxisSelectionFor, resolveProps } from "@rebtel-atelier/spec";
 import { rebtelDesignSystem } from "@rebtel-atelier/rebtel-ds";
 
 // ── Shape notes ─────────────────────────────────────────────
@@ -21,11 +21,16 @@ import { rebtelDesignSystem } from "@rebtel-atelier/rebtel-ds";
 // arrays, no functions, no DOM refs. UI slice (selection/scope/zoom/…)
 // stays in Zustand forever; it's session-local per user.
 //
-// Variant draft state lives on `designSystem.components[i].variants[j].draft`.
-// It's editor-local (never persisted, never rendered by non-editing users)
-// and reset on publish or exit-without-saving. CLAUDE.md invariant #5:
-// draft vs published is a real boundary. The resolver reads draft only when
-// the caller opts in via `draftScope`.
+// v4 model (session 3.5 chunk 2):
+// - Component carries `draft` and `published` snapshots
+//   ({ axisOverrides, stateOverrides }). Editing modifies the draft;
+//   publish promotes draft → published and bumps publishedVersion.
+// - Instances pin to a component via `componentId` + `axisSelection`.
+//   No more `variantId` — variants are axis combinations.
+// - "Editing a variant" in the UI now means editing one specific axis
+//   combination's draft override entry on its component. The user-facing
+//   word stays "variant" through chunk 2; the UI surface gets the axes
+//   treatment in 3.5b.
 
 export type EditScope = "instance" | "variant" | "base";
 
@@ -40,10 +45,15 @@ export interface PublishedPrInfo {
   number: number;
 }
 
-/** Which component/variant is currently being edited (scope === 'variant'). */
-export interface EditingVariantKey {
+/**
+ * Identifies a single axis combination on a component being edited.
+ * The combination is what the user-facing "variant" word means in v4.
+ * `axisSelection: {}` is the implicit single combination of an
+ * axis-less component (e.g. CountryPicker).
+ */
+export interface EditingAxisCombinationKey {
   componentId: ComponentTypeId;
-  variantId: string;
+  axisSelection: Record<string, string>;
 }
 
 /** Which component is currently being edited (scope === 'base'). */
@@ -60,7 +70,7 @@ interface UIState {
   /** Component type id currently being dragged from the rail, or null. */
   draggingComponentId: ComponentTypeId | null;
   editScope: EditScope;
-  editingVariantKey: EditingVariantKey | null;
+  editingAxisCombinationKey: EditingAxisCombinationKey | null;
   editingBaseKey: EditingBaseKey | null;
   /** When the user clicks an escalation target but hasn't confirmed yet. */
   pendingScopeEscalation: EditScope | null;
@@ -69,7 +79,7 @@ interface UIState {
   /**
    * Per-canvas "adopt new version" choice staged in the push popup. Keyed
    * by canvasId. Populated on popup open (defaults: draft → true,
-   * shipped → false) and consumed by publishVariant.
+   * shipped → false) and consumed by publishComponent.
    */
   canvasPublishChoices: Record<string, boolean>;
   /** Filter for the per-canvas impact list. */
@@ -83,11 +93,11 @@ interface UIState {
   /** Which tab is visible in the right panel when an instance is selected. */
   rightPanelTab: RightPanelTab;
   /**
-   * Family-view hover preview: variant id being previewed on the selected
-   * instance. Transient render-only state — mutating this does NOT write
-   * to the document. Cleared on mouseleave.
+   * Family-view hover preview: axis selection being previewed on the
+   * selected instance. Transient render-only state — mutating this does
+   * NOT write to the document. Cleared on mouseleave.
    */
-  hoveredVariantId: string | null;
+  hoveredAxisSelection: Record<string, string> | null;
   /**
    * Transient toast message shown after non-modal actions (e.g. variant
    * swap). Monotonic id so consecutive identical messages still trigger.
@@ -113,14 +123,10 @@ interface Actions {
   setRightPanelTab: (tab: RightPanelTab) => void;
 
   // Scope / edit-mode
-  /** Click an instance to scope to 'instance' (no confirmation). */
   resetScopeToInstance: () => void;
-  /** User clicked 'This variant' or 'Base component' — show inline confirm. */
   requestScopeEscalation: (scope: EditScope) => void;
-  /** User clicked the escalated scope a second time — commit and enter edit mode. */
   confirmScopeEscalation: () => void;
   cancelScopeEscalation: () => void;
-  /** Exit-without-saving: revert draft and return to instance scope. */
   exitEditMode: () => void;
 
   // Document — instances
@@ -128,16 +134,21 @@ interface Actions {
     canvasId: string,
     frameId: string,
     componentId: ComponentTypeId,
-    variantId: string,
+    axisSelection: Record<string, string>,
     position: { x: number; y: number },
   ) => string;
   updateInstanceProps: (id: string, props: Record<string, PropValue>) => void;
   setCanvasStatus: (canvasId: string, status: Canvas["status"]) => void;
 
-  // Document — variant / base draft
-  updateVariantDraft: (
+  // Document — component / base draft
+  /**
+   * Add or update an axis-override draft entry for a specific axis
+   * combination. Idempotent on `axisSelection` deep-equality — calling
+   * twice for the same combination updates the existing draft entry.
+   */
+  updateAxisOverrideDraft: (
     componentId: ComponentTypeId,
-    variantId: string,
+    axisSelection: Record<string, string>,
     props: Record<string, PropValue>,
   ) => void;
   updateBaseDraft: (
@@ -148,30 +159,39 @@ interface Actions {
   // Publish
   openPushPopup: () => void;
   closePushPopup: () => void;
-  publishVariant: (
+  /**
+   * Publish all pending draft overrides (axis + state) on a component.
+   * Bumps publishedVersion, snapshots into publishedHistory, opens a PR
+   * via /api/publish-variant. Per-canvas adopt choices in
+   * `canvasPublishChoices` decide whether each canvas's instances of
+   * this component bump their pinned variantVersion.
+   */
+  publishComponent: (
     componentId: ComponentTypeId,
-    variantId: string,
   ) => Promise<{ ok: true; pr: PublishedPrInfo } | { ok: false; error: string }>;
   publishBase: (componentId: ComponentTypeId) => void;
-  /** Toggle a single canvas's adopt/stay choice in the popup. */
   setCanvasPublishChoice: (canvasId: string, adopt: boolean) => void;
   setPushPopupFilter: (filter: PushPopupFilter) => void;
   clearPublishError: () => void;
 
   // Family view
-  setHoveredVariantId: (id: string | null) => void;
+  setHoveredAxisSelection: (sel: Record<string, string> | null) => void;
   /**
-   * Swap the selected instance's variantId (instance-level override — no
-   * edit module, no variant mutation). Also re-pins variantVersion to the
-   * new variant's current publishedVersion.
+   * Set the selected instance's axisSelection (instance-level swap — no
+   * edit module, no draft mutation). Re-pins variantVersion to the
+   * component's current publishedVersion.
    */
-  swapInstanceVariant: (instanceId: string, nextVariantId: string) => void;
+  setInstanceAxisSelection: (
+    instanceId: string,
+    axisSelection: Record<string, string>,
+  ) => void;
   /**
-   * Create a new variant on the component, seeded from the given variant's
-   * published + the given instance's overrides. Drops the editor into
-   * variant-edit mode on the new variant.
+   * Add a new option to the component's first axis, seeded from the
+   * given instance's resolved props. Drops the editor into variant-edit
+   * mode on the new combination. Returns the new option name, or null
+   * if the component has no axes (no place to add an option).
    */
-  createVariantFromInstance: (instanceId: string) => string | null;
+  createAxisOptionFromInstance: (instanceId: string) => string | null;
 
   // Toast
   showToast: (message: string) => void;
@@ -213,14 +233,13 @@ const demo2Canvas: Canvas = {
       size: { w: 375, h: 812 },
     },
   ],
-  // Seeded with a couple of Button-primary instances so the second canvas
-  // is a meaningful target for the draft/published verification (check #4)
-  // and the shipped-pin verification (check #8).
+  // Seeded with two Button instances on the primary style axis. v4
+  // shape: axisSelection replaces variantId.
   instances: [
     {
       id: "inst_seed_demo2_btn_a",
       componentId: "Button",
-      variantId: "primary",
+      axisSelection: { style: "primary" },
       variantVersion: 1,
       propOverrides: { label: "Call now" },
       position: { x: 24, y: 80 },
@@ -229,7 +248,7 @@ const demo2Canvas: Canvas = {
     {
       id: "inst_seed_demo2_btn_b",
       componentId: "Button",
-      variantId: "primary",
+      axisSelection: { style: "primary" },
       variantVersion: 1,
       propOverrides: { label: "Send top-up" },
       position: { x: 24, y: 160 },
@@ -240,31 +259,57 @@ const demo2Canvas: Canvas = {
 };
 
 // Deep-clone the hardcoded DS so per-tab draft mutations can't leak back
-// into the singleton imported module.
+// into the singleton imported module. v4 shape: clone draft / published
+// snapshots and the publishedHistory map.
 function cloneDesignSystem(ds: DesignSystem): DesignSystem {
   return {
     ...ds,
-    components: ds.components.map((c) => ({
-      ...c,
-      baseDraft: c.baseDraft ? { ...c.baseDraft } : {},
-      baseSpec: { ...c.baseSpec, props: { ...c.baseSpec.props } },
-      variants: c.variants.map((v) => {
-        const publishedCopy = { ...v.published };
-        // Seed history with the current published version — shipped canvases
-        // need to be able to pin to it after future publishes overwrite
-        // `published`.
-        const history = { ...(v.publishedHistory ?? {}) };
-        if (history[v.publishedVersion] === undefined) {
-          history[v.publishedVersion] = publishedCopy;
-        }
-        return {
-          ...v,
-          draft: { ...v.draft },
-          published: publishedCopy,
-          publishedHistory: history,
-        };
-      }),
-    })),
+    components: ds.components.map((c) => {
+      const cloneSnapshot = (snap: Component["published"]): Component["published"] => ({
+        axisOverrides: snap.axisOverrides.map((o) => ({
+          axisSelection: { ...o.axisSelection },
+          props: { ...o.props },
+        })),
+        stateOverrides: snap.stateOverrides.map((o) => ({
+          state: o.state,
+          props: { ...o.props },
+        })),
+      });
+
+      const history: Record<number, Component["published"]> = {};
+      for (const [v, snap] of Object.entries(c.publishedHistory ?? {})) {
+        history[Number(v)] = cloneSnapshot(snap);
+      }
+      // Seed history with the current published version so shipped
+      // canvases can pin to it after future publishes overwrite
+      // `published`.
+      if (history[c.publishedVersion] === undefined) {
+        history[c.publishedVersion] = cloneSnapshot(c.published);
+      }
+
+      return {
+        ...c,
+        baseDraft: c.baseDraft ? { ...c.baseDraft } : {},
+        baseSpec: {
+          ...c.baseSpec,
+          props: { ...c.baseSpec.props },
+          children: c.baseSpec.children.map((child) =>
+            child.kind === "primitive"
+              ? {
+                  ...child,
+                  props: { ...child.props },
+                  children: [...child.children],
+                }
+              : { ...child, axisSelection: child.axisSelection ? { ...child.axisSelection } : undefined, propOverrides: child.propOverrides ? { ...child.propOverrides } : undefined },
+          ),
+        },
+        axes: c.axes.map((a) => ({ name: a.name, options: [...a.options], default: a.default })),
+        supportedStates: [...c.supportedStates],
+        draft: cloneSnapshot(c.draft),
+        published: cloneSnapshot(c.published),
+        publishedHistory: history,
+      };
+    }),
   };
 }
 
@@ -281,16 +326,45 @@ function mapComponent(
   };
 }
 
-function mapVariant(
-  ds: DesignSystem,
-  componentId: ComponentTypeId,
-  variantId: string,
-  fn: (v: Variant) => Variant,
-): DesignSystem {
-  return mapComponent(ds, componentId, (c) => ({
-    ...c,
-    variants: c.variants.map((v) => (v.id === variantId ? fn(v) : v)),
-  }));
+/** Deep-equality check for axisSelection records. Order-independent. */
+export function axisSelectionsEqual(
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean {
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
+/**
+ * Upsert a draft axis override on a component. Preserves the existing
+ * entry's prop bag and merges the incoming props on top. If no matching
+ * entry exists yet, append a new one.
+ */
+function upsertAxisOverrideDraft(
+  c: Component,
+  axisSelection: Record<string, string>,
+  props: Record<string, PropValue>,
+): Component {
+  const existing = c.draft.axisOverrides.find((o) =>
+    axisSelectionsEqual(o.axisSelection, axisSelection),
+  );
+  let nextOverrides: AxisOverride[];
+  if (existing) {
+    nextOverrides = c.draft.axisOverrides.map((o) =>
+      o === existing ? { ...o, props: { ...o.props, ...props } } : o,
+    );
+  } else {
+    nextOverrides = [
+      ...c.draft.axisOverrides,
+      { axisSelection: { ...axisSelection }, props: { ...props } },
+    ];
+  }
+  return { ...c, draft: { ...c.draft, axisOverrides: nextOverrides } };
 }
 
 // ── Store ───────────────────────────────────────────────────
@@ -304,7 +378,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   pan: { x: 0, y: 0 },
   draggingComponentId: null,
   editScope: "instance",
-  editingVariantKey: null,
+  editingAxisCombinationKey: null,
   editingBaseKey: null,
   pendingScopeEscalation: null,
   pushPopupOpen: false,
@@ -314,7 +388,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   publishError: null,
   lastPublishedPr: null,
   rightPanelTab: "properties",
-  hoveredVariantId: null,
+  hoveredAxisSelection: null,
   toast: null,
 
   // Document
@@ -335,9 +409,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   selectInstance: (id) => {
     const current = get().selection;
     if (current === id) return;
-    // Selection change clears any transient hover preview to avoid
-    // stale-render flashes on the new target.
-    set({ selection: id, hoveredVariantId: null });
+    set({ selection: id, hoveredAxisSelection: null });
   },
   setTool: (tool) => set({ tool }),
   setZoom: (zoom) => set({ zoom }),
@@ -349,19 +421,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   resetScopeToInstance: () =>
     set({
       editScope: "instance",
-      editingVariantKey: null,
+      editingAxisCombinationKey: null,
       editingBaseKey: null,
       pendingScopeEscalation: null,
     }),
 
   requestScopeEscalation: (scope) => {
     if (scope === "instance") {
-      // Click-to-go-back-to-instance. Exit any in-progress edit first.
       get().exitEditMode();
       return;
     }
-    // If already in the requested edit mode, clicking again should do nothing;
-    // that's handled by the UI. Otherwise record the pending request.
     set({ pendingScopeEscalation: scope });
   },
 
@@ -381,9 +450,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (pending === "variant") {
       set({
         editScope: "variant",
-        editingVariantKey: {
+        editingAxisCombinationKey: {
           componentId: selected.componentId,
-          variantId: selected.variantId,
+          axisSelection: { ...selected.axisSelection },
         },
         editingBaseKey: null,
         pendingScopeEscalation: null,
@@ -391,11 +460,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return;
     }
 
-    // base
     set({
       editScope: "base",
       editingBaseKey: { componentId: selected.componentId },
-      editingVariantKey: null,
+      editingAxisCombinationKey: null,
       pendingScopeEscalation: null,
     });
   },
@@ -408,11 +476,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       set({ pendingScopeEscalation: null });
       return;
     }
-    // Revert the draft overlay to empty. Published is untouched.
     let nextDs = state.designSystem;
-    if (state.editScope === "variant" && state.editingVariantKey) {
-      const { componentId, variantId } = state.editingVariantKey;
-      nextDs = mapVariant(nextDs, componentId, variantId, (v) => ({ ...v, draft: {} }));
+    if (state.editScope === "variant" && state.editingAxisCombinationKey) {
+      const { componentId } = state.editingAxisCombinationKey;
+      nextDs = mapComponent(nextDs, componentId, (c) => ({
+        ...c,
+        draft: { axisOverrides: [], stateOverrides: [] },
+      }));
     } else if (state.editScope === "base" && state.editingBaseKey) {
       const { componentId } = state.editingBaseKey;
       nextDs = mapComponent(nextDs, componentId, (c) => ({ ...c, baseDraft: {} }));
@@ -420,7 +490,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({
       designSystem: nextDs,
       editScope: "instance",
-      editingVariantKey: null,
+      editingAxisCombinationKey: null,
       editingBaseKey: null,
       pendingScopeEscalation: null,
       pushPopupOpen: false,
@@ -428,7 +498,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   // ── Document actions ─────────────────────────────────
-  addInstance: (canvasId, frameId, componentId, variantId, position) => {
+  addInstance: (canvasId, frameId, componentId, axisSelection, position) => {
     const state = get();
     const canvas = state.canvases[canvasId];
     if (!canvas) {
@@ -440,14 +510,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       console.warn(`[canvas store] addInstance: unknown componentId ${componentId}`);
       return "";
     }
-    const variant = component.variants.find((v) => v.id === variantId);
-    const pinnedVersion = variant?.publishedVersion ?? 1;
     const id = `inst_${nanoid(8)}`;
     const instance: Instance = {
       id,
       componentId,
-      variantId,
-      variantVersion: pinnedVersion,
+      axisSelection: { ...axisSelection },
+      variantVersion: component.publishedVersion,
       propOverrides: {},
       position,
       frameId,
@@ -485,12 +553,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       };
     }),
 
-  updateVariantDraft: (componentId, variantId, props) =>
+  updateAxisOverrideDraft: (componentId, axisSelection, props) =>
     set((s) => ({
-      designSystem: mapVariant(s.designSystem, componentId, variantId, (v) => ({
-        ...v,
-        draft: { ...v.draft, ...props },
-      })),
+      designSystem: mapComponent(s.designSystem, componentId, (c) =>
+        upsertAxisOverrideDraft(c, axisSelection, props),
+      ),
     })),
 
   updateBaseDraft: (componentId, props) =>
@@ -504,16 +571,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // ── Publish ─────────────────────────────────────────
   openPushPopup: () => {
     const state = get();
-    // Seed per-canvas adopt choices for the variant being pushed. Draft
-    // canvases adopt by default; shipped canvases stay pinned. Only
-    // canvases that actually use this variant get an entry.
+    // Per-canvas adopt choices: in v4 the publish bumps the whole
+    // component's version, so every canvas with ANY instance of this
+    // component is in scope. Default: draft → adopt, shipped → stay.
     const choices: Record<string, boolean> = {};
-    if (state.editScope === "variant" && state.editingVariantKey) {
-      const { componentId, variantId } = state.editingVariantKey;
+    let componentId: ComponentTypeId | null = null;
+    if (state.editScope === "variant" && state.editingAxisCombinationKey) {
+      componentId = state.editingAxisCombinationKey.componentId;
+    } else if (state.editScope === "base" && state.editingBaseKey) {
+      componentId = state.editingBaseKey.componentId;
+    }
+    if (componentId) {
       for (const c of Object.values(state.canvases)) {
-        const uses = c.instances.some(
-          (i) => i.componentId === componentId && i.variantId === variantId,
-        );
+        const uses = c.instances.some((i) => i.componentId === componentId);
         if (!uses) continue;
         choices[c.id] = c.status === "draft";
       }
@@ -531,56 +601,67 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       pushPopupOpen: false,
       canvasPublishChoices: {},
       publishError: null,
-      // lastPublishedPr intentionally kept — callers like the toast need
-      // to read it after the popup closes.
     }),
   setCanvasPublishChoice: (canvasId, adopt) =>
     set((s) => ({ canvasPublishChoices: { ...s.canvasPublishChoices, [canvasId]: adopt } })),
   setPushPopupFilter: (filter) => set({ pushPopupFilter: filter }),
   clearPublishError: () => set({ publishError: null }),
 
-  publishVariant: async (componentId, variantId) => {
+  publishComponent: async (componentId) => {
     const state = get();
     const component = state.designSystem.components.find((c) => c.id === componentId);
-    const variant = component?.variants.find((v) => v.id === variantId);
-    if (!component || !variant) {
-      return { ok: false, error: "Component or variant not found" };
+    if (!component) {
+      return { ok: false, error: "Component not found" };
     }
 
-    const previousVersion = variant.publishedVersion;
+    const previousVersion = component.publishedVersion;
     const nextVersion = previousVersion + 1;
-    const nextPublished: VariantProps = { ...variant.published, ...variant.draft };
 
-    // Snapshot variants pre and post for the API request body (commit
-    // message + PR body need the diff rendered server-side).
-    const variantBefore: Variant = {
-      ...variant,
-      draft: {},
-      publishedHistory: undefined,
+    // Promote draft → published. Each draft axis override merges onto
+    // the matching published entry (or appends if no match). State
+    // overrides similarly.
+    const mergedAxisOverrides: AxisOverride[] = component.published.axisOverrides.map((o) => {
+      const draftEntry = component.draft.axisOverrides.find((d) =>
+        axisSelectionsEqual(d.axisSelection, o.axisSelection),
+      );
+      return draftEntry ? { ...o, props: { ...o.props, ...draftEntry.props } } : o;
+    });
+    for (const draftEntry of component.draft.axisOverrides) {
+      const exists = mergedAxisOverrides.some((o) =>
+        axisSelectionsEqual(o.axisSelection, draftEntry.axisSelection),
+      );
+      if (!exists) mergedAxisOverrides.push(draftEntry);
+    }
+    const mergedStateOverrides = [
+      ...component.published.stateOverrides,
+      ...component.draft.stateOverrides.filter(
+        (d) => !component.published.stateOverrides.some((p) => p.state === d.state),
+      ),
+    ];
+    const nextPublished: Component["published"] = {
+      axisOverrides: mergedAxisOverrides,
+      stateOverrides: mergedStateOverrides,
     };
-    const variantAfter: Variant = {
-      ...variant,
-      draft: {},
+
+    // Shape used by the publish API for commit message + diff +
+    // generated file content. Route still expects the legacy v3-shaped
+    // payload; the publish package's update lands in the same chunk.
+    // Editor name kept stable for now.
+    const componentForPublish: Component = {
+      ...component,
+      draft: { axisOverrides: [], stateOverrides: [] },
       published: nextPublished,
       publishedVersion: nextVersion,
       publishedHistory: undefined,
     };
 
-    // Post-publish component shape — what the generator serializes into
-    // the shipped .variants.ts file.
-    const componentForPublish: Component = {
-      ...component,
-      variants: component.variants.map((v) =>
-        v.id === variantId ? variantAfter : { ...v, draft: {}, publishedHistory: undefined },
-      ),
-    };
-
-    // Build impact rows honoring the popup's per-canvas adopt choices.
+    // Per-canvas adopt choices: applies to every canvas with any
+    // instance of this component.
     const choices = state.canvasPublishChoices;
     const impacts = Object.values(state.canvases)
       .map((c) => {
         const instanceCount = c.instances.reduce(
-          (n, i) => (i.componentId === componentId && i.variantId === variantId ? n + 1 : n),
+          (n, i) => (i.componentId === componentId ? n + 1 : n),
           0,
         );
         if (instanceCount === 0) return null;
@@ -597,8 +678,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     set({ isPublishing: true, publishError: null });
 
-    // ── GitHub side — load-bearing. If this fails, nothing in the
-    // store changes; Supabase write below is also skipped.
     let prInfo: PublishedPrInfo;
     try {
       const res = await fetch("/api/publish-variant", {
@@ -606,15 +685,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           component: componentForPublish,
-          variantBefore,
-          variantAfter,
+          previousPublished: component.published,
+          nextPublished,
+          previousVersion,
+          nextVersion,
           impacts,
           editor: "Forrest",
         }),
       });
-      // Read as text first so non-JSON responses (Vercel's generic error
-      // pages, a crashed function, a 502) surface a readable message
-      // instead of a misleading "Unexpected end of JSON input".
       const rawText = await res.text();
       let parsed:
         | { ok: true; pr: { number: number; url: string } }
@@ -643,34 +721,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return { ok: false, error: msg };
     }
 
-    // ── Supabase side — stubbed for session 3 (no persistence yet).
-    // When we wire it up, a failure here rolls back by closing the PR.
-    // Shape of rollback:
-    //   await fetch('/api/rollback-pr', { body: { number: prInfo.number } });
-    //   set({ isPublishing: false, publishError: supabaseErr });
-    //   return { ok: false, error: supabaseErr };
-    // Leaving the comment rather than the code so the write path stays
-    // honest about what isn't implemented.
-
-    // ── Apply local document state. Promote draft → published, bump
-    // version, snapshot into history so pinned canvases can resolve
-    // back to prior versions.
-    const nextDs = mapVariant(state.designSystem, componentId, variantId, (v) => ({
-      ...v,
+    // Apply local document state. Snapshot into history so pinned
+    // canvases can resolve back to prior versions.
+    const nextDs = mapComponent(state.designSystem, componentId, (c) => ({
+      ...c,
       published: nextPublished,
-      draft: {},
+      draft: { axisOverrides: [], stateOverrides: [] },
       publishedVersion: nextVersion,
       publishedHistory: {
-        ...(v.publishedHistory ?? {}),
+        ...(c.publishedHistory ?? {}),
         [nextVersion]: nextPublished,
       },
       lastPublishedAt: new Date().toISOString(),
       lastPublishedBy: "forrest@rebtel",
     }));
 
-    // Per-canvas adoption: bump variantVersion on canvases where the
-    // user chose "adopt new version" (default: true for draft, false
-    // for shipped — set by the popup).
+    // Per-canvas adoption: bump variantVersion on canvases that opted in.
     const nextCanvases: Record<string, Canvas> = {};
     for (const [cid, c] of Object.entries(state.canvases)) {
       const adopt = choices[cid] ?? c.status === "draft";
@@ -680,11 +746,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
       let mutated = false;
       const instances = c.instances.map((inst) => {
-        if (
-          inst.componentId === componentId &&
-          inst.variantId === variantId &&
-          inst.variantVersion !== nextVersion
-        ) {
+        if (inst.componentId === componentId && inst.variantVersion !== nextVersion) {
           mutated = true;
           return { ...inst, variantVersion: nextVersion };
         }
@@ -697,17 +759,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       designSystem: nextDs,
       canvases: nextCanvases,
       editScope: "instance",
-      editingVariantKey: null,
+      editingAxisCombinationKey: null,
       isPublishing: false,
       publishError: null,
       lastPublishedPr: prInfo,
-      // Leave pushPopupOpen: true so the user sees the success state with
-      // the PR link. closePushPopup() (called on "Done" / backdrop click)
-      // resets canvasPublishChoices and pushPopupOpen together.
     });
 
-    // Queue a toast with the PR link for the canvas after the popup closes.
-    get().showToast(`${component.name} · ${variant.name} published · ${prInfo.url}`);
+    get().showToast(`${component.name} published · ${prInfo.url}`);
 
     return { ok: true, pr: prInfo };
   },
@@ -719,24 +777,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const baseDraft = component.baseDraft ?? {};
     if (Object.keys(baseDraft).length === 0) return;
 
-    // Promote baseDraft → baseSpec.props, bump component.version, clear draft.
-    const previousVersion = component.version;
+    const previousVersion = component.publishedVersion;
     const nextVersion = previousVersion + 1;
     const nextDs = mapComponent(state.designSystem, componentId, (c) => ({
       ...c,
       baseSpec: { ...c.baseSpec, props: { ...c.baseSpec.props, ...baseDraft } },
       baseDraft: {},
-      version: nextVersion,
+      publishedVersion: nextVersion,
     }));
 
-    // Base edits don't change variantVersion per-se, but the brief says base
-    // changes cascade to all variants and all instances. For session 2 the
-    // pinning semantics on base are simpler: draft canvases reflect the new
-    // base; shipped canvases stay on the old base by pinning their instances
-    // to the now-snapshot's resolved values. We don't materialize that here
-    // (requires a base-version pin on Instance that we haven't designed yet);
-    // we just flag it in the console.
-    console.log("[publish] PR would open here", {
+    console.log("[publish] base PR would open here", {
       componentId,
       kind: "base",
       fromVersion: previousVersion,
@@ -753,11 +803,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   // ── Family view ─────────────────────────────────────────
-  setHoveredVariantId: (id) => set({ hoveredVariantId: id }),
+  setHoveredAxisSelection: (sel) => set({ hoveredAxisSelection: sel }),
 
-  swapInstanceVariant: (instanceId, nextVariantId) => {
+  setInstanceAxisSelection: (instanceId, axisSelection) => {
     const state = get();
-    // Find the instance to discover its componentId (instances may live on any canvas).
     let instComponentId: ComponentTypeId | null = null;
     for (const c of Object.values(state.canvases)) {
       const hit = c.instances.find((i) => i.id === instanceId);
@@ -769,23 +818,26 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (!instComponentId) return;
 
     const component = state.designSystem.components.find((c) => c.id === instComponentId);
-    const nextVariant = component?.variants.find((v) => v.id === nextVariantId);
-    if (!component || !nextVariant) return;
+    if (!component) return;
 
     const nextCanvases: Record<string, Canvas> = {};
     for (const [cid, c] of Object.entries(state.canvases)) {
       const instances = c.instances.map((inst) =>
         inst.id === instanceId
-          ? { ...inst, variantId: nextVariantId, variantVersion: nextVariant.publishedVersion }
+          ? {
+              ...inst,
+              axisSelection: { ...axisSelection },
+              variantVersion: component.publishedVersion,
+            }
           : inst,
       );
       nextCanvases[cid] = instances === c.instances ? c : { ...c, instances };
     }
     set({ canvases: nextCanvases });
-    get().showToast(`Swapped to ${nextVariant.name} · instance override`);
+    get().showToast(`Swapped variant · instance override`);
   },
 
-  createVariantFromInstance: (instanceId) => {
+  createAxisOptionFromInstance: (instanceId) => {
     const state = get();
     let inst: Instance | undefined;
     for (const c of Object.values(state.canvases)) {
@@ -795,41 +847,66 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (!inst) return null;
 
     const component = state.designSystem.components.find((c) => c.id === inst!.componentId);
-    const currentVariant = component?.variants.find((v) => v.id === inst!.variantId);
-    if (!component || !currentVariant) return null;
+    if (!component) return null;
+    const firstAxis = component.axes[0];
+    if (!firstAxis) {
+      // No axes — nothing to add an option to.
+      get().showToast(`${component.name} has no variant axis to extend.`);
+      return null;
+    }
 
-    // Auto-generate id from component id and next ordinal.
-    const newOrdinal = component.variants.length + 1;
-    const newId = `${component.id.toLowerCase()}-variant-${newOrdinal}`;
-    // New variant seeded from current variant's published + instance overrides.
-    const seededPublished: VariantProps = {
-      ...currentVariant.published,
-      ...(inst.propOverrides as VariantProps),
+    // Auto-generate option name. Avoid collisions with existing options.
+    const existingOptions = new Set(firstAxis.options);
+    let ordinal = firstAxis.options.length + 1;
+    let newOptionName = `option-${ordinal}`;
+    while (existingOptions.has(newOptionName)) {
+      ordinal += 1;
+      newOptionName = `option-${ordinal}`;
+    }
+
+    const newSelection: Record<string, string> = {
+      ...inst.axisSelection,
+      [firstAxis.name]: newOptionName,
     };
-    const newVariant: Variant = {
-      id: newId,
-      name: newId,
-      extends: "base",
-      draft: {},
-      published: seededPublished,
-      publishedVersion: 1,
-      publishedHistory: { 1: seededPublished },
-    };
+
+    // Seed the new axisOverride with the resolved props of the source
+    // instance (excluding base props that aren't varied — keep the
+    // override sparse, only diffs from base).
+    const resolved = resolveProps(component, inst.axisSelection, inst.propOverrides);
+    const baseProps = component.baseSpec.props;
+    const seededProps: Record<string, PropValue> = {};
+    for (const [k, v] of Object.entries(resolved)) {
+      if (JSON.stringify(baseProps[k]) !== JSON.stringify(v)) {
+        seededProps[k] = v;
+      }
+    }
 
     const nextDs = mapComponent(state.designSystem, component.id, (c) => ({
       ...c,
-      variants: [...c.variants, newVariant],
+      axes: c.axes.map((a) =>
+        a.name === firstAxis.name ? { ...a, options: [...a.options, newOptionName] } : a,
+      ),
+      published: {
+        ...c.published,
+        axisOverrides: [
+          ...c.published.axisOverrides,
+          { axisSelection: { ...newSelection }, props: { ...seededProps } },
+        ],
+      },
     }));
 
     set({
       designSystem: nextDs,
       editScope: "variant",
-      editingVariantKey: { componentId: component.id, variantId: newId },
+      editingAxisCombinationKey: {
+        componentId: component.id,
+        axisSelection: { ...newSelection },
+      },
       editingBaseKey: null,
       pendingScopeEscalation: null,
-      hoveredVariantId: null,
+      hoveredAxisSelection: null,
     });
-    return newId;
+    return newOptionName;
   },
 
   // ── Toast ──────────────────────────────────────────────
@@ -847,28 +924,62 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
     useCanvasStore;
 }
 
-// ── Selectors (stable refs via useShallow callsites — simple derived only) ─
+// ── Selectors and helpers ───────────────────────────────────
 
-/** Get the currently-active Canvas object (or undefined during init). */
 export function selectActiveCanvas(s: CanvasStore): Canvas | undefined {
   return s.canvases[s.activeCanvasId];
 }
 
-// Helpers that operate on primitive slices — safe to call in the component
-// render body (not inside a zustand selector, which would trip the snapshot
-// cache on fresh object returns).
-
-export function countFromCanvases(
+/**
+ * Count instances on every canvas matching a specific axis combination
+ * for a component. Used by the family-view "this combo is used N times
+ * here" hint.
+ */
+export function countAxisCombinationUsage(
   canvases: Record<string, Canvas>,
   componentId: ComponentTypeId,
-  variantId: string,
+  axisSelection: Record<string, string>,
 ): { instanceCount: number; canvasCount: number } {
   let instanceCount = 0;
   let canvasCount = 0;
   for (const c of Object.values(canvases)) {
     let canvasHas = false;
     for (const inst of c.instances) {
-      if (inst.componentId === componentId && inst.variantId === variantId) {
+      if (inst.componentId !== componentId) continue;
+      if (!axisSelectionsEqual(inst.axisSelection, axisSelection)) continue;
+      instanceCount += 1;
+      canvasHas = true;
+    }
+    if (canvasHas) canvasCount += 1;
+  }
+  return { instanceCount, canvasCount };
+}
+
+/** Per-canvas count of instances matching one axis combination. */
+export function countAxisCombinationOnCanvas(
+  canvas: Canvas,
+  componentId: ComponentTypeId,
+  axisSelection: Record<string, string>,
+): number {
+  let n = 0;
+  for (const inst of canvas.instances) {
+    if (inst.componentId !== componentId) continue;
+    if (axisSelectionsEqual(inst.axisSelection, axisSelection)) n += 1;
+  }
+  return n;
+}
+
+/** Across-all-canvases count keyed by component only. */
+export function countFromCanvasesByComponent(
+  canvases: Record<string, Canvas>,
+  componentId: ComponentTypeId,
+): { instanceCount: number; canvasCount: number } {
+  let instanceCount = 0;
+  let canvasCount = 0;
+  for (const c of Object.values(canvases)) {
+    let canvasHas = false;
+    for (const inst of c.instances) {
+      if (inst.componentId === componentId) {
         instanceCount += 1;
         canvasHas = true;
       }
@@ -878,28 +989,68 @@ export function countFromCanvases(
   return { instanceCount, canvasCount };
 }
 
-/** Instances of a specific variant on a specific canvas — for family-view usage counts. */
-export function countVariantUsageOnCanvas(
-  canvas: Canvas,
-  componentId: ComponentTypeId,
-  variantId: string,
-): number {
-  let n = 0;
-  for (const inst of canvas.instances) {
-    if (inst.componentId === componentId && inst.variantId === variantId) n += 1;
+/**
+ * Enumerate every axis combination on a component as a flat list.
+ * Single-axis: one entry per option (`primary`, `secondary`, `ghost`).
+ * Multi-axis: cartesian product (`primary/sm`, `primary/md`, …).
+ * Empty axes: a single entry with `axisSelection: {}` and the
+ * synthesized name "default".
+ *
+ * Family view in chunk 2 still presents these as a flat strip — 3.5b
+ * groups them by axis.
+ */
+export function enumerateAxisCombinations(
+  component: Component,
+): { axisSelection: Record<string, string>; name: string; key: string }[] {
+  if (component.axes.length === 0) {
+    return [{ axisSelection: {}, name: "default", key: "default" }];
   }
-  return n;
+  let combos: Record<string, string>[] = [{}];
+  for (const axis of component.axes) {
+    const next: Record<string, string>[] = [];
+    for (const combo of combos) {
+      for (const opt of axis.options) {
+        next.push({ ...combo, [axis.name]: opt });
+      }
+    }
+    combos = next;
+  }
+  return combos.map((sel) => ({
+    axisSelection: sel,
+    name: synthesizeVariantName(component, sel),
+    key: synthesizeVariantKey(sel),
+  }));
+}
+
+/** Display name for an axis combination. Single-axis: the value. Multi-axis: joined with " / ". */
+export function synthesizeVariantName(
+  component: Component,
+  axisSelection: Record<string, string>,
+): string {
+  if (component.axes.length === 0) return "default";
+  if (component.axes.length === 1) {
+    const axis = component.axes[0]!;
+    return axisSelection[axis.name] ?? axis.default;
+  }
+  return component.axes.map((a) => axisSelection[a.name] ?? a.default).join(" / ");
 }
 
 /**
- * Pure scoring for the component-swap stub. For session 2b this drives a
- * console.log; session 3 wires it into UI.
- *
- * - shapeScore: Jaccard of baseSpec.props keys (overlap / union).
- * - coOccurrenceScore: share of canvases where BOTH components appear.
- *   Weak signal — we don't have nested components yet, so "same canvas"
- *   is the best proxy for "reasonably replaces".
- * - total: weighted sum (shape dominant, co-occurrence as tiebreaker).
+ * Stable React key from an axisSelection. Sorts keys so a re-ordered
+ * selection still produces the same string.
+ */
+export function synthesizeVariantKey(axisSelection: Record<string, string>): string {
+  const entries = Object.entries(axisSelection).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return "__default__";
+  return entries.map(([k, v]) => `${k}=${v}`).join("&");
+}
+
+/** Defaults helper re-exported for the canvas / dnd-kit caller. */
+export { defaultAxisSelectionFor };
+
+/**
+ * Pure scoring for the component-swap stub. Unchanged from chunk 1 —
+ * still operates on baseSpec.props keys.
  */
 export interface SwapCandidate {
   componentId: ComponentTypeId;
@@ -944,31 +1095,10 @@ export function scoreSwapCandidates(
       componentName: c.name,
       shapeScore,
       coOccurrenceScore,
-      // Shape is the primary signal; co-occurrence breaks ties at small scales.
       total: shapeScore * 0.8 + coOccurrenceScore * 0.2,
     });
   }
 
   candidates.sort((a, b) => b.total - a.total);
   return candidates;
-}
-
-export function countFromCanvasesByComponent(
-  canvases: Record<string, Canvas>,
-  componentId: ComponentTypeId,
-  variantCount: number,
-): { instanceCount: number; canvasCount: number; variantCount: number } {
-  let instanceCount = 0;
-  let canvasCount = 0;
-  for (const c of Object.values(canvases)) {
-    let canvasHas = false;
-    for (const inst of c.instances) {
-      if (inst.componentId === componentId) {
-        instanceCount += 1;
-        canvasHas = true;
-      }
-    }
-    if (canvasHas) canvasCount += 1;
-  }
-  return { instanceCount, canvasCount, variantCount };
 }

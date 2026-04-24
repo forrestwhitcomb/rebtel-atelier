@@ -36,9 +36,12 @@ export function collectResolvedTokens(
   component: Component,
   instance: Instance,
 ): ResolvedTokenRow[] {
-  const resolved = resolveProps(component, instance.variantId, instance.propOverrides, {
-    variantVersion: instance.variantVersion,
-  });
+  const resolved = resolveProps(
+    component,
+    instance.axisSelection,
+    instance.propOverrides,
+    { variantVersion: instance.variantVersion },
+  );
 
   const rows: ResolvedTokenRow[] = [];
   for (const [key, value] of Object.entries(resolved)) {

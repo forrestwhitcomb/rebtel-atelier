@@ -2,8 +2,9 @@
 
 import type { CSSProperties } from "react";
 import {
-  countFromCanvases,
+  countAxisCombinationUsage,
   countFromCanvasesByComponent,
+  synthesizeVariantName,
   useCanvasStore,
 } from "@/stores/canvas";
 
@@ -22,7 +23,7 @@ export function EditModule() {
   // Pull primitive slices only — never derive objects inside a selector,
   // or Zustand's snapshot cache trips (useSyncExternalStore → infinite loop).
   const editScope = useCanvasStore((s) => s.editScope);
-  const editingVariantKey = useCanvasStore((s) => s.editingVariantKey);
+  const editingAxisCombinationKey = useCanvasStore((s) => s.editingAxisCombinationKey);
   const editingBaseKey = useCanvasStore((s) => s.editingBaseKey);
   const selection = useCanvasStore((s) => s.selection);
   const canvases = useCanvasStore((s) => s.canvases);
@@ -43,29 +44,38 @@ export function EditModule() {
     canvasCount: number;
   } | null = null;
 
-  if (editScope === "variant" && editingVariantKey) {
-    const component = designSystem.components.find((c) => c.id === editingVariantKey.componentId);
-    const variant = component?.variants.find((v) => v.id === editingVariantKey.variantId);
-    const stats = countFromCanvases(
-      canvases,
-      editingVariantKey.componentId,
-      editingVariantKey.variantId,
+  if (editScope === "variant" && editingAxisCombinationKey) {
+    const component = designSystem.components.find(
+      (c) => c.id === editingAxisCombinationKey.componentId,
     );
+    const stats = countAxisCombinationUsage(
+      canvases,
+      editingAxisCombinationKey.componentId,
+      editingAxisCombinationKey.axisSelection,
+    );
+    // Find the matching draft override entry to surface its changed
+    // prop keys as chips. There can be at most one matching entry — the
+    // store upserts on axisSelection deep-equality.
+    const draftEntry = component?.draft.axisOverrides.find((o) => {
+      const a = o.axisSelection;
+      const b = editingAxisCombinationKey.axisSelection;
+      const ak = Object.keys(a);
+      if (ak.length !== Object.keys(b).length) return false;
+      return ak.every((k) => a[k] === b[k]);
+    });
     info = {
       kind: "variant",
-      componentName: component?.name ?? editingVariantKey.componentId,
-      variantName: variant?.name ?? editingVariantKey.variantId,
-      changedKeys: Object.keys(variant?.draft ?? {}),
+      componentName: component?.name ?? editingAxisCombinationKey.componentId,
+      variantName: component
+        ? synthesizeVariantName(component, editingAxisCombinationKey.axisSelection)
+        : null,
+      changedKeys: Object.keys(draftEntry?.props ?? {}),
       instanceCount: stats.instanceCount,
       canvasCount: stats.canvasCount,
     };
   } else if (editScope === "base" && editingBaseKey) {
     const component = designSystem.components.find((c) => c.id === editingBaseKey.componentId);
-    const stats = countFromCanvasesByComponent(
-      canvases,
-      editingBaseKey.componentId,
-      component?.variants.length ?? 0,
-    );
+    const stats = countFromCanvasesByComponent(canvases, editingBaseKey.componentId);
     info = {
       kind: "base",
       componentName: component?.name ?? editingBaseKey.componentId,

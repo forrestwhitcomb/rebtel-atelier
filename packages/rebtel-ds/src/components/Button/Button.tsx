@@ -1,14 +1,12 @@
 import type { CSSProperties } from "react";
 import { resolveTextStyle } from "../../tokens.js";
 
-export type ButtonVariantId = "primary" | "secondary" | "ghost";
-
 /**
  * Token-driven button. Colors and radius arrive as already-coerced CSS
  * variable references (the renderer coerces TokenRef → string via
- * resolveToken before invoking the component). Variant-edit mode works
- * by mutating these tokens on variant.draft — the button doesn't need to
- * know about variants at all.
+ * resolveToken before invoking the component). Style variants live as
+ * axis overrides on `buttonComponent.published.axisOverrides[]` — the
+ * Button itself doesn't know about axes; it just reads resolved props.
  */
 export interface ButtonProps {
   label: string;
