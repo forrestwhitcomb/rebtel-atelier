@@ -19,12 +19,41 @@ function required(name: string): string {
   return v;
 }
 
+/**
+ * Normalize a PEM that may have been mangled by a dashboard input field.
+ *
+ * Three shapes survive the trip through Vercel's env-var UI:
+ *   1. Real newlines preserved (textarea "just works"). Pass through.
+ *   2. Literal `\n` escape sequences where newlines should be. Replace.
+ *   3. Newlines stripped entirely — BEGIN/END markers and base64 body
+ *      glued into one line separated by spaces (or nothing). Reconstruct.
+ *
+ * Without (3), OpenSSL's decoder fails with `error:1E08010C:DECODER
+ * routines::unsupported` because it sees the BEGIN marker and then can't
+ * find the matching header terminator.
+ */
+function normalizePem(raw: string): string {
+  let text = raw.trim();
+  // Literal "\n" → actual newlines.
+  if (text.includes("\\n")) text = text.replace(/\\n/g, "\n");
+  if (text.includes("\n")) return text;
+
+  // No newlines at all. Re-wrap around BEGIN/END markers. The marker
+  // pattern accepts both "RSA PRIVATE KEY" (PKCS#1) and "PRIVATE KEY"
+  // (PKCS#8) — GitHub's download is PKCS#1 but other sources vary.
+  const markerRe =
+    /(-----BEGIN [A-Z ]*PRIVATE KEY-----)(.*?)(-----END [A-Z ]*PRIVATE KEY-----)/s;
+  const match = text.match(markerRe);
+  if (!match) return text; // Not recognizable; let OpenSSL surface its own error.
+  const [, begin, middle, end] = match;
+  const base64 = (middle ?? "").replace(/\s+/g, "");
+  const wrapped = base64.match(/.{1,64}/g)?.join("\n") ?? "";
+  return `${begin}\n${wrapped}\n${end}\n`;
+}
+
 function loadPrivateKey(): string {
   const inline = process.env.GITHUB_PRIVATE_KEY;
-  if (inline) {
-    // Allow newlines stored as literal `\n` in dashboards like Vercel.
-    return inline.includes("\\n") ? inline.replace(/\\n/g, "\n") : inline;
-  }
+  if (inline) return normalizePem(inline);
   const path = process.env.GITHUB_PRIVATE_KEY_PATH;
   if (!path) {
     throw new Error(
