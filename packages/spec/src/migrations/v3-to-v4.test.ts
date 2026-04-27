@@ -6,16 +6,50 @@ import {
   type ComponentV3,
   type InstanceV3,
 } from "./v3-to-v4.js";
-import {
-  buttonPlan,
-  countryPickerPlan,
-  productCardPlan,
-} from "./plans/index.js";
 
-// The three production plans are imported (not redeclared) so the tests
-// exercise the exact decomposition the DS components consume. A drift
-// between plan-as-tested and plan-as-shipped is impossible by
-// construction.
+// v3 → v4 migration is invoked ad-hoc by an operator at the time of a
+// Supabase persistence cutover (see RUNBOOK.md). No canonical plans
+// ship with the repo; each test inlines the plan it exercises so the
+// fixture and the plan sit side-by-side in one file.
+
+const buttonPlan: ComponentMigrationPlan = {
+  axes: [
+    {
+      name: "style",
+      options: ["primary", "secondary", "ghost"],
+      default: "primary",
+    },
+  ],
+  supportedStates: ["default", "hover", "pressed", "disabled", "focus"],
+  variantToAxisSelection: {
+    primary: { style: "primary" },
+    secondary: { style: "secondary" },
+    ghost: { style: "ghost" },
+  },
+};
+
+const productCardPlan: ComponentMigrationPlan = {
+  axes: [
+    {
+      name: "emphasis",
+      options: ["default", "highlighted"],
+      default: "default",
+    },
+  ],
+  supportedStates: ["default", "hover", "pressed"],
+  variantToAxisSelection: {
+    "mtu-bundle": { emphasis: "default" },
+    "mtu-bundle-highlighted": { emphasis: "highlighted" },
+  },
+};
+
+const countryPickerPlan: ComponentMigrationPlan = {
+  axes: [],
+  supportedStates: ["default"],
+  variantToAxisSelection: {
+    default: {},
+  },
+};
 
 // ── Fixtures (lifted from packages/rebtel-ds, trimmed) ─────
 

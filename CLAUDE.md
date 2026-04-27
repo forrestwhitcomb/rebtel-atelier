@@ -64,7 +64,7 @@ Vercel hosts the Next.js app; PartyKit runtime runs separately on Cloudflare. Th
 - **One acceptance criterion per session.** If scope feels like it's growing past the brief, stop and flag rather than push through.
 - **Document shape is CRDT-compatible from day one.** Stable IDs, no order-sensitive arrays, no raw DOM references. Even before Yjs is wired, the Zustand store has to speak a shape Yjs can ingest cleanly.
 - **No `position: fixed`** in rendered components — it collides with the canvas pan/zoom layer.
-- **Three files per DS component.** When adding to `packages/rebtel-ds`: a `.tsx` (React), a `.spec.ts` (ComponentSpec declaration), a `.variants.ts` (variant registry). If one's missing, the component is incomplete.
+- **Two files per DS component.** When adding to `packages/rebtel-ds`: a `.tsx` (React) and a `.spec.ts` (ComponentSpec + axes + supportedStates + axisOverrides + stateOverrides on the `Component`). The legacy `.variants.ts` was absorbed into `.spec.ts` when v4 collapsed flat-string variants into axis overrides — do not reintroduce it.
 - **Tokens are typed.** `Token<'color'>`, `Token<'spacing'>`, etc. No stringly-typed token references.
 - **Palette groups are manual, not inferred.** When adding a new component, the person (or AI) adding it has to decide its group. Don't auto-assign based on name or shape; that creates drift as the DS grows.
 

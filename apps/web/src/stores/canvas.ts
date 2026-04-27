@@ -99,6 +99,13 @@ interface UIState {
    */
   hoveredAxisSelection: Record<string, string> | null;
   /**
+   * Library palette collapse state, keyed by PaletteGroup id. `true` =
+   * collapsed, missing/undefined = expanded. Session-local only; not
+   * persisted to Supabase (groups are editorial — their identities can
+   * change between sessions).
+   */
+  collapsedLibraryGroups: Record<string, boolean>;
+  /**
    * Transient toast message shown after non-modal actions (e.g. variant
    * swap). Monotonic id so consecutive identical messages still trigger.
    */
@@ -121,6 +128,8 @@ interface Actions {
   setPan: (pan: { x: number; y: number }) => void;
   setDraggingComponentId: (id: ComponentTypeId | null) => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
+  /** Toggle a palette group's collapsed state in the left rail. */
+  toggleLibraryGroup: (group: string) => void;
 
   // Scope / edit-mode
   resetScopeToInstance: () => void;
@@ -190,8 +199,11 @@ interface Actions {
    * given instance's resolved props. Drops the editor into variant-edit
    * mode on the new combination. Returns the new option name, or null
    * if the component has no axes (no place to add an option).
+   *
+   * `axisName` targets a specific axis; defaults to the first axis for
+   * back-compat (family view's per-axis + buttons pass the axis name).
    */
-  createAxisOptionFromInstance: (instanceId: string) => string | null;
+  createAxisOptionFromInstance: (instanceId: string, axisName?: string) => string | null;
 
   // Toast
   showToast: (message: string) => void;
@@ -389,6 +401,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   lastPublishedPr: null,
   rightPanelTab: "properties",
   hoveredAxisSelection: null,
+  collapsedLibraryGroups: {},
   toast: null,
 
   // Document
@@ -416,6 +429,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setPan: (pan) => set({ pan }),
   setDraggingComponentId: (draggingComponentId) => set({ draggingComponentId }),
   setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
+  toggleLibraryGroup: (group) =>
+    set((s) => ({
+      collapsedLibraryGroups: {
+        ...s.collapsedLibraryGroups,
+        [group]: !s.collapsedLibraryGroups[group],
+      },
+    })),
 
   // ── Scope / edit-mode ─────────────────────────────────
   resetScopeToInstance: () =>
@@ -837,7 +857,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().showToast(`Swapped variant · instance override`);
   },
 
-  createAxisOptionFromInstance: (instanceId) => {
+  createAxisOptionFromInstance: (instanceId, axisName) => {
     const state = get();
     let inst: Instance | undefined;
     for (const c of Object.values(state.canvases)) {
@@ -848,16 +868,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     const component = state.designSystem.components.find((c) => c.id === inst!.componentId);
     if (!component) return null;
-    const firstAxis = component.axes[0];
-    if (!firstAxis) {
+    const targetAxis = axisName
+      ? component.axes.find((a) => a.name === axisName)
+      : component.axes[0];
+    if (!targetAxis) {
       // No axes — nothing to add an option to.
       get().showToast(`${component.name} has no variant axis to extend.`);
       return null;
     }
 
     // Auto-generate option name. Avoid collisions with existing options.
-    const existingOptions = new Set(firstAxis.options);
-    let ordinal = firstAxis.options.length + 1;
+    const existingOptions = new Set(targetAxis.options);
+    let ordinal = targetAxis.options.length + 1;
     let newOptionName = `option-${ordinal}`;
     while (existingOptions.has(newOptionName)) {
       ordinal += 1;
@@ -866,7 +888,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     const newSelection: Record<string, string> = {
       ...inst.axisSelection,
-      [firstAxis.name]: newOptionName,
+      [targetAxis.name]: newOptionName,
     };
 
     // Seed the new axisOverride with the resolved props of the source
@@ -884,7 +906,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const nextDs = mapComponent(state.designSystem, component.id, (c) => ({
       ...c,
       axes: c.axes.map((a) =>
-        a.name === firstAxis.name ? { ...a, options: [...a.options, newOptionName] } : a,
+        a.name === targetAxis.name ? { ...a, options: [...a.options, newOptionName] } : a,
       ),
       published: {
         ...c.published,

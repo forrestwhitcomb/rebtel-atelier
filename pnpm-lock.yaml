@@ -107,6 +107,9 @@ importers:
         specifier: workspace:*
         version: link:../spec
     devDependencies:
+      '@rebtel-atelier/rebtel-ds':
+        specifier: workspace:*
+        version: link:../rebtel-ds
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

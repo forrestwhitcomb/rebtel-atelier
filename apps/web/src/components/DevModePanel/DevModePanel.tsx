@@ -16,9 +16,9 @@ interface DevModePanelProps {
  * semantic token references behind the rendered styles, and links out
  * to the source on GitHub. No editing happens here.
  *
- * Design note: variant is treated as a single prop (`variant="..."`).
- * Session 3.5 refactors variants into axis/state matrices; until then
- * the flat form wins and keeps this view honest about today's shape.
+ * Each axis becomes its own prop in the snippet (`style="primary"`,
+ * `size="md"`) — the engineer's React component signature receives one
+ * string prop per axis, not a single flattened `variant` slug.
  */
 export function DevModePanel({ component, instance }: DevModePanelProps) {
   const [copied, setCopied] = useState(false);

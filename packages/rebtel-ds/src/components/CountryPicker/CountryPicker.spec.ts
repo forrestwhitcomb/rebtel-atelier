@@ -1,28 +1,42 @@
-import { countryPickerPlan, type Component } from "@rebtel-atelier/spec";
-
-// v4 shape — CountryPicker has no axes (axes: []). Instances pin with
-// an empty `axisSelection: {}`. Future axes (e.g. `density`) would
-// extend the plan in `packages/spec/src/migrations/plans/CountryPicker.plan.ts`.
-
-const { axes, supportedStates } = countryPickerPlan;
+import type { Component } from "@rebtel-atelier/spec";
 
 export const countryPickerComponent: Component = {
   id: "CountryPicker",
   name: "CountryPicker",
   paletteGroup: "productSpecific",
-  axes,
-  supportedStates,
+  axes: [],
+  supportedStates: ["default"],
   baseSpec: {
     kind: "primitive",
     id: "CountryPicker:base",
     type: "CountryPicker",
     props: {
       countries: [
-        { code: "US", name: "United States", flag: "🇺🇸" },
-        { code: "SE", name: "Sweden", flag: "🇸🇪" },
-        { code: "IN", name: "India", flag: "🇮🇳" },
-        { code: "NG", name: "Nigeria", flag: "🇳🇬" },
-        { code: "PH", name: "Philippines", flag: "🇵🇭" },
+        {
+          code: "US",
+          name: "United States",
+          flag: "🇺🇸",
+        },
+        {
+          code: "SE",
+          name: "Sweden",
+          flag: "🇸🇪",
+        },
+        {
+          code: "IN",
+          name: "India",
+          flag: "🇮🇳",
+        },
+        {
+          code: "NG",
+          name: "Nigeria",
+          flag: "🇳🇬",
+        },
+        {
+          code: "PH",
+          name: "Philippines",
+          flag: "🇵🇭",
+        },
       ],
       selectedCode: null,
       bg: { token: "color.input-bg" },
@@ -33,11 +47,10 @@ export const countryPickerComponent: Component = {
     },
     children: [],
   },
-  draft: { axisOverrides: [], stateOverrides: [] },
-  // Empty axes means an empty axisSelection ({}) is the only valid
-  // selection. The single axisOverride keyed `{}` carries the same
-  // token bindings as base — explicit so future axes can layer on top
-  // without changing the resolution path.
+  draft: {
+    axisOverrides: [],
+    stateOverrides: [],
+  },
   published: {
     axisOverrides: [
       {

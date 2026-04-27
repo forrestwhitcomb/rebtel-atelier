@@ -13,7 +13,7 @@
 
 1. A Supabase project containing live v3 data.
 2. `DATABASE_URL` for the target project, with `pg_dump` access.
-3. A reviewed `ComponentMigrationPlan` for **every** v3 component in the database. The three production DS components (Button / ProductCard / CountryPicker) have plans authored in `v3-to-v4.test.ts`. Any component added between session 3 and the day you run this needs its plan authored by the migration operator.
+3. A reviewed `ComponentMigrationPlan` for **every** v3 component in the database. No canonical plans ship with the repo — the operator authors one plan per component at cutover time. `v3-to-v4.test.ts` contains inline fixture plans for Button / ProductCard / CountryPicker that serve as reference shape examples.
 4. Confirmed approval from the Atelier owner that a migration window is acceptable. The migration runs in a single transaction; users hitting the app during that window will see stale reads or, briefly, errors.
 
 ## Pre-flight checks
@@ -150,9 +150,11 @@ If you've already dropped the v3 tables to reclaim space, rollback restores the 
 
 ## Where plans live
 
-`packages/spec/src/migrations/plans/`. The DS package stays focused on components; the migrations package owns the archaeology. Each plan is a typed `ComponentMigrationPlan` exported from a file named after the component (e.g. `Button.plan.ts`).
+Plans are authored ad-hoc when the migration runs; no canonical plans ship with the repo. The migration operator constructs a `ComponentMigrationPlan` per component at cutover time and passes the collection to `pnpm migrate:v4 --plans path/to/component-plans.json`.
 
-> Path note: plans live under `src/` so they're picked up by `packages/spec`'s tsconfig and re-exported through `@rebtel-atelier/spec` for the DS components to consume. The original brief proposed `packages/spec/migrations/plans/` (outside `src/`); chunk 2 moved them inside `src/` to avoid tsconfig fragility. The three production plans (`Button.plan.ts`, `ProductCard.plan.ts`, `CountryPicker.plan.ts`) ship with chunk 2 and are imported by their matching `.spec.ts` files in `packages/rebtel-ds`.
+The v4 component shape (axes, supportedStates) is the source of truth for live DS components — each component's `packages/rebtel-ds/src/components/<Name>/<Name>.spec.ts` declares its axes and supportedStates inline. A migration plan is a one-time translation artifact mapping old v3 flat-variant ids to new axis selections; once cutover is complete, the plan can be discarded.
+
+The test suite in `packages/spec/src/migrations/v3-to-v4.test.ts` exercises the migration with inline fixture plans (Button / ProductCard / CountryPicker). Those fixtures live next to their test data and are reference-only — treat them as shape examples when authoring production plans.
 
 ## Open questions (resolve before running this against production)
 

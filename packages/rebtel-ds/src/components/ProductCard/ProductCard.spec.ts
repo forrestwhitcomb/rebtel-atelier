@@ -1,22 +1,17 @@
-import { productCardPlan, type Component } from "@rebtel-atelier/spec";
-
-// v4 shape with a single `emphasis` axis (default vs highlighted).
-//
-// Composition (Model C — narrow demonstration): baseSpec.children
-// includes one ComponentRef to Button keyed `cta`. The renderer walks
-// the spec tree, renders that Button via the registry (with its own
-// axis selection), and passes the result to ProductCard.tsx as a
-// `cta?: ReactNode` slot prop. Multi-ref support is exercised by the
-// renderer's tests; ProductCard's surface only needs the one slot.
-
-const { axes, supportedStates } = productCardPlan;
+import type { Component } from "@rebtel-atelier/spec";
 
 export const productCardComponent: Component = {
   id: "ProductCard",
   name: "ProductCard",
   paletteGroup: "productSpecific",
-  axes,
-  supportedStates,
+  axes: [
+    {
+      name: "emphasis",
+      options: ["default", "highlighted"],
+      default: "default",
+    },
+  ],
+  supportedStates: ["default", "hover", "pressed"],
   baseSpec: {
     kind: "primitive",
     id: "ProductCard:base",
@@ -37,28 +32,25 @@ export const productCardComponent: Component = {
         kind: "component",
         key: "cta",
         componentId: "Button",
-        // Default axis selection on the referenced Button — the slot
-        // arrives as a primary-style button. Future ProductCard variants
-        // could override `style: 'secondary'` here per axis combination.
-        axisSelection: { style: "primary" },
-        // Wire the parent's `ctaLabel` through to the Button's `label`
-        // prop — keeps the engineer's mental model simple (one prop on
-        // ProductCard, no need to dig into the slot to relabel the CTA).
+        axisSelection: {
+          style: "primary",
+        },
         propOverrides: {
-          // The renderer reads `propOverrides` against the referenced
-          // component's props at render time. Mapping ProductCard's
-          // `ctaLabel` to Button's `label` is done by the parent React
-          // component; here we just assert the slot's default label.
           label: "Buy now",
         },
       },
     ],
   },
-  draft: { axisOverrides: [], stateOverrides: [] },
+  draft: {
+    axisOverrides: [],
+    stateOverrides: [],
+  },
   published: {
     axisOverrides: [
       {
-        axisSelection: { emphasis: "default" },
+        axisSelection: {
+          emphasis: "default",
+        },
         props: {
           bg: { token: "color.card-bg" },
           border: { token: "color.card-border" },
@@ -67,7 +59,9 @@ export const productCardComponent: Component = {
         },
       },
       {
-        axisSelection: { emphasis: "highlighted" },
+        axisSelection: {
+          emphasis: "highlighted",
+        },
         props: {
           bg: { token: "color.home-card-mtu-bg" },
           border: { token: "color.border-brand" },

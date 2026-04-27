@@ -48,22 +48,16 @@ export interface JsxSnippet {
  * Build the handoff JSX for an instance. Shape:
  *
  *   <ComponentName
- *     variant="..."
+ *     style="primary"
+ *     size="md"
  *     overrideKey="overrideValue"
  *     ...
  *   />
  *
- * Only instance-level overrides that differ from the resolved variant's
- * published state become explicit props; everything else cascades.
- *
- * Token refs render as their dot-path string (e.g. `bg="color.card-bg"`).
- * The engineer's codebase can translate that to whatever token import
- * shape it uses — we don't assume one.
- *
- * v4 note: chunk 2 still emits a single `variant="..."` prop synthesized
- * from the instance's axisSelection (single-axis components → the value;
- * multi-axis → "axis1=v1+axis2=v2"). 3.5b decomposes this into one prop
- * per axis (`<Button style="primary" size="md" />`).
+ * Each axis on the component becomes its own prop (`style="primary"`,
+ * `size="md"`). Instance-level overrides that differ from the resolved
+ * variant's published state follow. Token refs render as their dot-path
+ * string (e.g. `bg="color.card-bg"`).
  */
 export function buildJsxSnippet(component: Component, instance: Instance): JsxSnippet {
   const snapshot = publishedSnapshotAtVersion(component, instance.variantVersion);
@@ -90,13 +84,18 @@ export function buildJsxSnippet(component: Component, instance: Instance): JsxSn
     overrideEntries.push({ key, formatted: formatPropValue(value) });
   }
 
-  const variantSlug = synthesizeVariantSlug(instance.axisSelection);
-  const variantProp: { key: string; formatted: string | null }[] =
-    variantSlug !== null
-      ? [{ key: "variant", formatted: JSON.stringify(variantSlug) }]
-      : [];
+  // Per-axis props, emitted in the component's declared axis order so
+  // the snippet reads left-to-right as the axis list does in the family
+  // view. Missing axis values fall back to the axis's default.
+  const axisProps: { key: string; formatted: string | null }[] = component.axes.map(
+    (axis) => {
+      const value = instance.axisSelection[axis.name] ?? axis.default;
+      return { key: axis.name, formatted: JSON.stringify(value) };
+    },
+  );
+
   const allProps: { key: string; formatted: string | null }[] = [
-    ...variantProp,
+    ...axisProps,
     ...overrideEntries,
   ];
 
@@ -110,21 +109,4 @@ export function buildJsxSnippet(component: Component, instance: Instance): JsxSn
       : `<${component.name}\n${propLines.join("\n")}\n/>`;
 
   return { text, props: allProps };
-}
-
-/**
- * Pretty (commit-message) form of an axis selection. Single-axis: just
- * the value (e.g. "primary"). Multi-axis: "style=primary+size=md".
- * Returns null for an empty selection — the snippet then omits the
- * `variant` prop entirely.
- *
- * 3.5b moves this to a shared `axisSlug.ts` in `packages/publish`
- * along with its branch-form sibling and a parser. For chunk 2 the
- * snippet only emits the pretty form; branches handled in publish.
- */
-function synthesizeVariantSlug(axisSelection: Record<string, string>): string | null {
-  const entries = Object.entries(axisSelection);
-  if (entries.length === 0) return null;
-  if (entries.length === 1) return entries[0]![1];
-  return entries.map(([k, v]) => `${k}=${v}`).join("+");
 }

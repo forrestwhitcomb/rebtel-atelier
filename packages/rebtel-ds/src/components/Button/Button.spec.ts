@@ -1,19 +1,17 @@
-import { buttonPlan, type Component } from "@rebtel-atelier/spec";
-
-// v4 shape — flat-string variants are gone. The `style` axis carries
-// what was previously three named variants (primary / secondary / ghost).
-// Axes and supportedStates come from the migration plan in
-// `packages/spec/src/migrations/plans/Button.plan.ts` so the migration
-// archaeology and the live DS share one source of truth.
-
-const { axes, supportedStates } = buttonPlan;
+import type { Component } from "@rebtel-atelier/spec";
 
 export const buttonComponent: Component = {
   id: "Button",
   name: "Button",
   paletteGroup: "inputs",
-  axes,
-  supportedStates,
+  axes: [
+    {
+      name: "style",
+      options: ["primary", "secondary", "ghost"],
+      default: "primary",
+    },
+  ],
+  supportedStates: ["default", "hover", "pressed", "disabled", "focus"],
   baseSpec: {
     kind: "primitive",
     id: "Button:base",
@@ -28,11 +26,16 @@ export const buttonComponent: Component = {
     },
     children: [],
   },
-  draft: { axisOverrides: [], stateOverrides: [] },
+  draft: {
+    axisOverrides: [],
+    stateOverrides: [],
+  },
   published: {
     axisOverrides: [
       {
-        axisSelection: { style: "primary" },
+        axisSelection: {
+          style: "primary",
+        },
         props: {
           bg: { token: "color.button-primary-bg" },
           fg: { token: "color.button-primary-text" },
@@ -41,7 +44,9 @@ export const buttonComponent: Component = {
         },
       },
       {
-        axisSelection: { style: "secondary" },
+        axisSelection: {
+          style: "secondary",
+        },
         props: {
           bg: { token: "color.button-secondary-black-bg" },
           fg: { token: "color.button-secondary-black-text" },
@@ -50,7 +55,9 @@ export const buttonComponent: Component = {
         },
       },
       {
-        axisSelection: { style: "ghost" },
+        axisSelection: {
+          style: "ghost",
+        },
         props: {
           bg: { token: "color.button-ghost-bg" },
           fg: { token: "color.button-ghost-text" },
@@ -59,10 +66,6 @@ export const buttonComponent: Component = {
         },
       },
     ],
-    // No state overrides seeded yet — Button.tsx already reads `disabled`
-    // as a prop and applies opacity/cursor styling itself. The state
-    // vocabulary is declared in supportedStates so a future state-aware
-    // session can add overrides here without touching the React side.
     stateOverrides: [],
   },
   publishedVersion: 1,

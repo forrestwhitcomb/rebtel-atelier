@@ -367,8 +367,8 @@ function ScopeConfirm({ pending, component, axisSelection, onCancel, onConfirm }
     ? `Changes to the base will cascade to all ${component.axes.reduce(
         (n, a) => n * a.options.length,
         component.axes.length === 0 ? 1 : 1,
-      )} variant combinations and ${stats.instanceCount} instances across ${stats.canvasCount} canvases.`
-    : `You're about to edit this variant combination. Changes will affect ${stats.instanceCount} instances across ${stats.canvasCount} canvases once published.`;
+      )} variants and ${stats.instanceCount} instances across ${stats.canvasCount} canvases.`
+    : `You're about to edit this variant. Changes will affect ${stats.instanceCount} instances across ${stats.canvasCount} canvases once published.`;
 
   return (
     <div

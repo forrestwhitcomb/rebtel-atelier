@@ -2,17 +2,19 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import type { Axis } from "@rebtel-atelier/spec";
 import {
   axisSelectionsEqual,
   countAxisCombinationOnCanvas,
   enumerateAxisCombinations,
   scoreSwapCandidates,
   selectActiveCanvas,
+  synthesizeVariantName,
   useCanvasStore,
 } from "@/stores/canvas";
 import { VariantThumbnail } from "./VariantThumbnail";
 
-const STRIP_WIDTH = 520;
+const STRIP_WIDTH = 540;
 const GAP = 12;
 
 type Placement = { kind: "right" | "below" | "above"; left: number; top: number };
@@ -20,6 +22,10 @@ type Placement = { kind: "right" | "below" | "above"; left: number; top: number 
 /**
  * Anchored to the currently-selected instance. Visible only when the instance's
  * component has more than one variant and the editor isn't in variant/base mode.
+ *
+ * 3.5b layout: one row per axis. Each row shows a small axis header followed
+ * by option thumbnails, plus a per-axis "+ new option" tile. Clicking an
+ * option swaps the instance's selection on that axis only (other axes stay).
  *
  * Positioned in screen coordinates (outside the TransformWrapper) so zoom
  * doesn't shrink the strip. We re-measure on pan/zoom/selection change.
@@ -48,15 +54,14 @@ export function FamilyView() {
     ? designSystem.components.find((c) => c.id === instance.componentId) ?? null
     : null;
 
-  // In v4, "more than one variant" means the cartesian product of axis
-  // options is > 1. Single-axis with 3 options → 3 combos; empty axes → 1
-  // combo. The family view stays hidden when there's only one combo to
-  // pick from (no swap is meaningful).
-  const combos = component ? enumerateAxisCombinations(component) : [];
+  // "More than one variant" means the cartesian product of axis options
+  // is > 1. Single-axis with 3 options → 3 combos; empty axes → 1 combo.
+  // Hide when there's only one combo to pick from (no swap is meaningful).
+  const comboCount = component ? enumerateAxisCombinations(component).length : 0;
   const visible =
     !!instance &&
     !!component &&
-    combos.length > 1 &&
+    comboCount > 1 &&
     editScope === "instance" &&
     !component.hideFamilyView;
 
@@ -103,18 +108,14 @@ export function FamilyView() {
       setPlacement({ kind: "above", left: belowLeft, top: aboveTop });
     };
 
-    // Immediate + on next frame (lets the render outline settle first).
     measure();
     const raf = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(raf);
   }, [visible, instance, zoom, pan.x, pan.y, activeCanvas?.id]);
 
-  // Re-measure on resize so the strip doesn't end up off-screen.
   useEffect(() => {
     if (!visible) return;
     const onResize = () => {
-      // Bump the deps indirectly by touching pan — cheapest trigger.
-      // (No harm if the measure no-ops when the DOM hasn't changed.)
       const el = document.querySelector<HTMLElement>(
         `[data-instance-id="${instance?.id ?? ""}"]`,
       );
@@ -172,7 +173,7 @@ export function FamilyView() {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <div style={{ fontWeight: 600, fontSize: 13 }}>{component.name}</div>
         <div style={{ fontSize: 11, color: "var(--atelier-panel-muted)" }}>
-          {combos.length} variant{combos.length === 1 ? "" : "s"}
+          {comboCount} variant{comboCount === 1 ? "" : "s"}
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 11, color: "var(--atelier-panel-muted)" }}>
@@ -180,58 +181,29 @@ export function FamilyView() {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          overflowX: "auto",
-          paddingBottom: 4,
-          scrollbarWidth: "thin",
-        }}
-      >
-        {combos.map((combo) => {
-          const usage = activeCanvas
-            ? countAxisCombinationOnCanvas(activeCanvas, component.id, combo.axisSelection)
-            : 0;
-          const isCurrent = axisSelectionsEqual(combo.axisSelection, instance.axisSelection);
-          return (
-            <VariantThumbnail
-              key={combo.key}
-              component={component}
-              axisSelection={combo.axisSelection}
-              variantName={combo.name}
-              sourceInstance={instance}
-              designSystem={designSystem}
-              isCurrent={isCurrent}
-              usageCount={usage}
-              onHoverEnter={() => setHoveredAxisSelection(combo.axisSelection)}
-              onHoverLeave={() => {
-                if (
-                  hoveredAxisSelection &&
-                  axisSelectionsEqual(hoveredAxisSelection, combo.axisSelection)
-                ) {
-                  setHoveredAxisSelection(null);
-                }
-              }}
-              onClick={() => {
-                if (isCurrent) return;
-                setHoveredAxisSelection(null);
-                setInstanceAxisSelection(instance.id, combo.axisSelection);
-              }}
-            />
-          );
-        })}
-
-        {/* + new variant — adds an option to the component's first axis */}
-        <NewVariantTile
-          onClick={() => {
-            const newOption = createAxisOptionFromInstance(instance.id);
+      {component.axes.map((axis) => (
+        <AxisRow
+          key={axis.name}
+          axis={axis}
+          component={component}
+          instance={instance}
+          activeCanvas={activeCanvas}
+          hoveredAxisSelection={hoveredAxisSelection}
+          designSystem={designSystem}
+          onHoverEnter={setHoveredAxisSelection}
+          onHoverLeave={() => setHoveredAxisSelection(null)}
+          onClickOption={(optionSelection) => {
+            setHoveredAxisSelection(null);
+            setInstanceAxisSelection(instance.id, optionSelection);
+          }}
+          onAddOption={() => {
+            const newOption = createAxisOptionFromInstance(instance.id, axis.name);
             if (!newOption) {
               console.warn("[FamilyView] createAxisOptionFromInstance returned null");
             }
           }}
         />
-      </div>
+      ))}
 
       <div style={{ fontSize: 11 }}>
         <button
@@ -262,10 +234,101 @@ export function FamilyView() {
   );
 }
 
-function NewVariantTile({ onClick }: { onClick: () => void }) {
+interface AxisRowProps {
+  axis: Axis;
+  component: import("@rebtel-atelier/spec").Component;
+  instance: import("@rebtel-atelier/spec").Instance;
+  activeCanvas: import("@rebtel-atelier/spec").Canvas | undefined;
+  hoveredAxisSelection: Record<string, string> | null;
+  designSystem: import("@rebtel-atelier/spec").DesignSystem;
+  onHoverEnter: (sel: Record<string, string>) => void;
+  onHoverLeave: () => void;
+  onClickOption: (sel: Record<string, string>) => void;
+  onAddOption: () => void;
+}
+
+function AxisRow({
+  axis,
+  component,
+  instance,
+  activeCanvas,
+  hoveredAxisSelection,
+  designSystem,
+  onHoverEnter,
+  onHoverLeave,
+  onClickOption,
+  onAddOption,
+}: AxisRowProps) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          color: "var(--atelier-panel-muted)",
+        }}
+      >
+        {axis.name}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          overflowX: "auto",
+          paddingBottom: 4,
+          scrollbarWidth: "thin",
+        }}
+      >
+        {axis.options.map((option) => {
+          const optionSelection: Record<string, string> = {
+            ...instance.axisSelection,
+            [axis.name]: option,
+          };
+          const isCurrent = axisSelectionsEqual(optionSelection, instance.axisSelection);
+          const usage = activeCanvas
+            ? countAxisCombinationOnCanvas(activeCanvas, component.id, optionSelection)
+            : 0;
+          const label = synthesizeVariantName(component, optionSelection);
+          return (
+            <VariantThumbnail
+              key={`${axis.name}:${option}`}
+              component={component}
+              axisSelection={optionSelection}
+              variantName={label}
+              sourceInstance={instance}
+              designSystem={designSystem}
+              isCurrent={isCurrent}
+              usageCount={usage}
+              onHoverEnter={() => onHoverEnter(optionSelection)}
+              onHoverLeave={() => {
+                if (
+                  hoveredAxisSelection &&
+                  axisSelectionsEqual(hoveredAxisSelection, optionSelection)
+                ) {
+                  onHoverLeave();
+                }
+              }}
+              onClick={() => {
+                if (isCurrent) return;
+                onClickOption(optionSelection);
+              }}
+            />
+          );
+        })}
+
+        <NewOptionTile axisName={axis.name} onClick={onAddOption} />
+      </div>
+    </div>
+  );
+}
+
+function NewOptionTile({ axisName, onClick }: { axisName: string; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
+      title={`Add new ${axisName} option`}
       style={{
         width: 132,
         height: 84 + 26,
@@ -283,13 +346,12 @@ function NewVariantTile({ onClick }: { onClick: () => void }) {
       }}
     >
       <div style={{ fontSize: 22, lineHeight: 1, marginTop: -4 }}>+</div>
-      <div style={{ fontSize: 11 }}>New variant</div>
+      <div style={{ fontSize: 11 }}>New {axisName} option</div>
     </div>
   );
 }
 
 function Tail({ placement }: { placement: Placement }) {
-  // Small triangle indicator pointing at the instance.
   const size = 8;
   const base: CSSProperties = {
     position: "absolute",
@@ -323,7 +385,6 @@ function Tail({ placement }: { placement: Placement }) {
       />
     );
   }
-  // above
   return (
     <div
       style={{
